@@ -55,9 +55,12 @@ function mergeStates(a, b) {
   new Set([...Object.keys(a.words || {}), ...Object.keys(b.words || {})]).forEach(w => {
     const x = (a.words || {})[w], y = (b.words || {})[w];
     if (!x || !y) { m.words[w] = JSON.parse(JSON.stringify(x || y)); return; }
-    const hi = x.s >= y.s ? x : y;
-    m.words[w] = { s: Math.max(x.s, y.s), last: (x.last || '') > (y.last || '') ? x.last : y.last, ok: Math.max(x.ok || 0, y.ok || 0), miss: Math.max(x.miss || 0, y.miss || 0), at: hi.at || x.at || y.at };
+    // The copy with the latest activity wins the stage, so a miss that dropped a word back isn't undone by an older copy.
+    const act = z => [z.last || '', z.slip || ''].sort().pop();
+    const hi = act(x) === act(y) ? (x.s >= y.s ? x : y) : act(x) > act(y) ? x : y;
+    m.words[w] = { s: hi.s, last: (x.last || '') > (y.last || '') ? x.last : y.last, slip: (x.slip || '') > (y.slip || '') ? x.slip : y.slip, ok: Math.max(x.ok || 0, y.ok || 0), miss: Math.max(x.miss || 0, y.miss || 0), at: hi.at || x.at || y.at };
   });
+  const seenLog = new Set(); m.log = [...(a.log || []), ...(b.log || [])].filter(e => { const k = JSON.stringify(e); if (seenLog.has(k)) return false; seenLog.add(k); return true; }).sort((p, q) => (p.d < q.d ? -1 : p.d > q.d ? 1 : 0)).slice(-2000);
   m.days = {};
   new Set([...Object.keys(a.days || {}), ...Object.keys(b.days || {})]).forEach(d => {
     const x = (a.days || {})[d] || {}, y = (b.days || {})[d] || {};

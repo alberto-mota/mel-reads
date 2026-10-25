@@ -117,6 +117,8 @@ button{font-family:inherit;color:inherit;cursor:pointer;-webkit-appearance:none;
 .sentence{font-family:'Andika',sans-serif;font-size:34px;line-height:1.5;font-weight:700;text-align:center;display:flex;flex-wrap:wrap;justify-content:center;gap:0 10px}
 .sentence span{border-radius:12px;padding:0 3px;transition:background .15s}
 .sentence span:active{background:#FFE3F0}
+.sentence span.found{background:#C9F5DC;color:#1F7A4A}
+.sentence span.nope{background:#FFE0E0;text-decoration:line-through;text-decoration-color:#E05A5A}
 /* bottom feedback sheet */
 .sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:480px;padding:18px 18px calc(env(safe-area-inset-bottom) + 18px);border-radius:30px 30px 0 0;display:flex;flex-direction:column;gap:14px;animation:slideUp .32s cubic-bezier(.2,1.2,.4,1);z-index:20}
 .sheet.ok{background:#E3F9EF;box-shadow:0 -10px 30px -10px rgba(34,176,125,.35)}

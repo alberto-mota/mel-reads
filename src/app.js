@@ -2,6 +2,8 @@
 /* Mel Reads v0.5 — Read with Sparkle.
    One daily adventure (~5 min): warm up (build words) → read words for treats → read a sentence to Sparkle
    → Sparkle eats → pick a present → bedtime, with a promise of a new trick tomorrow.
+   Mel mostly plays alone, so every step is something the app can check: no "I read it" buttons.
+   Treats come from right answers; a word only counts as known after 3 days of unaided right answers.
    A word grows one stage per day it's read correctly (seed → sprout → bud → flower); only shown to grown-ups. */
 
 const KEY2 = 'melreads.v2', KEY1 = 'melreads.v1';
@@ -68,6 +70,14 @@ function grow(w) {
   x.last = t; if (x.s < 3) { x.s++; return x.s; } return null;
 }
 function missWord(w) { const x = state.words[w]; if (x) x.miss = (x.miss || 0) + 1; }
+/* A wrong first answer on a reading check drops the word back a stage, so "known" stays honest. */
+function slipWord(w) { const x = state.words[w]; const t = today(); if (!x || x.slip === t) return; x.slip = t; if (x.s > 0) x.s--; }
+/* Every checked answer, for the grown-ups' "Is she learning?" numbers. */
+function logAnswer(it, ok) {
+  if (!state.log) state.log = [];
+  state.log.push({ d: today(), t: it.type, w: it.w || it.target || null, ok, ms: Date.now() - (it.t0 || Date.now()), cold: !!it.cold, help: !!it.helped, retry: !!it.retry });
+  if (state.log.length > 2000) state.log.splice(0, state.log.length - 2000);
+}
 function stepReady(i) { const ws = stepWords(i); if (!ws.length) return true; if (ws.some(w => !state.words[w])) return false; return ws.filter(w => state.words[w].s >= 2).length / ws.length >= 0.8; }
 function maybeAdvance() { let moved = false; while (state.stepIdx < STEPS.length && stepReady(state.stepIdx)) { state.stepIdx++; moved = true; } return moved; }
 const bookUnlocked = b => state.stepIdx >= b.after;
@@ -191,9 +201,15 @@ function balloonItem(w) {
   d = [...d, ...plantedOthers, ...shuffle(WORDS[info.skill].map(x => x.w).filter(x => x !== w))].filter((x, i, a) => a.indexOf(x) === i && x !== w && isSafe(x)).slice(0, 2);
   return { type: 'balloon', w, skill: info.skill, opts: shuffle([w, ...d]), answer: w, colors: shuffle(['#FF8FB1', '#8CC8FF', '#FFD66B', '#B79CF0', '#8EE3B5']) };
 }
+/* On Mel's page Sparkle names one word and she has to find it, so the page is checked. */
+function pageTarget(line) {
+  const ws = [...new Set(line.split(' ').map(w => w.replace(/[^A-Za-z']/g, '')).filter(Boolean))];
+  const good = ws.filter(w => w.length >= 3 && WORD_INFO[w.toLowerCase()] && WORD_INFO[w.toLowerCase()].skill !== 'sight');
+  return (good.length ? shuffle(good) : ws.sort((a, b) => b.length - a.length))[0];
+}
 function pushBook(items, b) {
   items.push({ type: 'cover', book: b });
-  b.lines.forEach((l, i) => items.push({ type: 'page', book: b, i, text: l, who: i % 2 === 0 ? 'sparkle' : 'mel' }));
+  b.lines.forEach((l, i) => items.push(Object.assign({ type: 'page', book: b, i, text: l, who: i % 2 === 0 ? 'sparkle' : 'mel' }, i % 2 ? { target: pageTarget(l) } : {})));
   items.push({ type: 'bookq', book: b, opts: shuffle(b.opts), answer: b.opts[0] });
 }
 /* The daily adventure: warm up → read words for treats → read a sentence out loud to Sparkle. */
@@ -214,13 +230,19 @@ function buildDaily() {
   items.push({ type: 'section', key: 'read' });
   newWords.forEach(w => items.push({ type: 'meet', w, pic: (WORD_INFO[w] || {}).pic }));
   const readWs = shuffle([...new Set([...newWords, ...due, ...reviews.slice(0, 2)])].slice(0, 8));
-  readWs.forEach((w, k) => items.push(makeItem(w, k % 2 ? 'teach' : 'pic')));
+  const reads = readWs.map((w, k) => makeItem(w, k % 2 ? 'teach' : 'pic'));
+  // Cold reads: words she has never seen, made only of sounds she has learned. Reading those is the real test of decoding.
+  coldWords([...newWords, ...warm]).slice(0, 2).forEach(w => reads.splice(1 + rnd(reads.length), 0, makeItem(w, 'pic', { cold: true })));
+  reads.forEach(x => items.push(x));
   const unit = (STEPS[Math.min(state.stepIdx, STEPS.length - 1)] || { unit: 1 }).unit;
-  const s = shuffle(SENTENCES[unit])[0];
   items.push({ type: 'section', key: 'story' });
-  items.push({ type: 'readaloud', text: s.t });
-  items.push({ type: 'sentence', text: s.t, q: s.q, opts: shuffle(s.opts), answer: s.opts[0] });
+  shuffle(SENTENCES[unit]).slice(0, 2).forEach(s => items.push({ type: 'sentence', text: s.t, q: s.q, opts: shuffle(s.opts), answer: s.opts[0] }));
   return items;
+}
+/* Picture words she has never practised, using only sounds she has been taught (excluding today's new words). */
+function coldWords(skip = []) {
+  const skills = new Set(STEPS.slice(0, state.stepIdx + 1).map(st => st.skill));
+  return shuffle(Object.values(WORD_INFO).filter(x => x.pic && skills.has(x.skill) && x.skill !== 'sight' && !state.words[x.w] && !skip.includes(x.w)).map(x => x.w));
 }
 function buildSession(kind) {
   const t = today(); const items = [];
@@ -263,7 +285,7 @@ function startSession(kind) {
 }
 function cur() { return S.items[S.i]; }
 function enterItem() {
-  const it = cur(); Object.assign(it, { done: false, first: true, msg: null, wrong: [], built: [], read: false, tries: 0, popped: null });
+  const it = cur(); Object.assign(it, { done: false, first: true, msg: null, wrong: [], built: [], read: false, tries: 0, popped: null, helped: false, t0: Date.now() });
   S.bubble = bubbleFor(it);
   if (it.tiles) it.tiles.forEach(t => t.used = false);
 }
@@ -271,23 +293,22 @@ function itemPrompt(it) {
   switch (it.type) {
     case 'section': return [SECTION[it.key].line()];
     case 'intro': return [LINES.newSound, it.step.intro];
-    case 'meet': return [LINES.meet, it.w, LINES.meetSay];
+    case 'meet': return [LINES.meet, it.w, LINES.meetSay, it.w];
     case 'pic': return [LINES.pic];
     case 'teach': return [LINES.teach];
     case 'hear': return [LINES.hear, it.w];
     case 'sight': return [LINES.sight, it.w];
     case 'build': return [LINES.build, it.w];
     case 'balloon': return [LINES.balloon, it.w];
-    case 'sentence': return [LINES.sentence, it.text, it.q];
-    case 'readaloud': return [LINES.readAloud];
+    case 'sentence': return [LINES.sentence];
     case 'cover': return [it.book.title];
-    case 'page': return it.who === 'sparkle' ? [LINES.myTurn, it.text] : [LINES.yourTurn];
+    case 'page': return it.who === 'sparkle' ? [LINES.myTurn, it.text] : [LINES.findWord, it.target];
     case 'bookq': return [it.book.q];
   }
   return [];
 }
 function bubbleFor(it) {
-  return { section: SECTION[it.key] && SECTION[it.key].line(), intro: it.step && it.step.intro, meet: "Here's a new word!", pic: 'Can you find the picture for this word?', teach: 'What does this say? Can you read it to me?', hear: 'Listen! Which word did I say?', sight: 'Find the word I say!', build: "Let's build the word! Listen.", balloon: 'Pop the balloon that says…', sentence: 'Read this with me!', readaloud: 'Read it out loud to me!', cover: it.book && it.book.title, page: it.who === 'sparkle' ? 'My turn! Listen.' : 'Your turn! Read this page to me.', bookq: it.book && it.book.q }[it.type] || '';
+  return { section: SECTION[it.key] && SECTION[it.key].line(), intro: it.step && it.step.intro, meet: "Here's a new word!", pic: 'Can you find the picture for this word?', teach: 'What does this say? Can you read it to me?', hear: 'Listen! Which word did I say?', sight: 'Find the word I say!', build: "Let's build the word! Listen.", balloon: 'Pop the balloon that says…', sentence: 'Read it by yourself. Then answer!', cover: it.book && it.book.title, page: it.who === 'sparkle' ? 'My turn! Listen.' : 'Your turn! Read the page, then tap the word I say.', bookq: it.book && it.book.q }[it.type] || '';
 }
 function afterEnter() {
   if (S.view === 'session') { const it = cur(); setTimeout(() => { if (S.view === 'session' && cur() === it) sparkleSays(itemPrompt(it)); }, 250); }
@@ -301,22 +322,32 @@ function afterEnter() {
   else if (S.view === 'goal') sparkleSays([LINES.bye]);
 }
 const READS = ['pic', 'teach', 'hear', 'sight'];
+const CHECKS = [...READS, 'sentence', 'page', 'bookq', 'build'];
 function correct(it, el) {
   it.done = true; chime(); haptic('success');
   if (it.first) { S.right++; S.treats = (S.treats || 0) + 1; } S.total++;
-  if (it.w && state.words[it.w]) {
-    // Only reading print grows a word. Building (spelling) and balloons are practice.
-    if (it.first) { const ns = READS.includes(it.type) ? grow(it.w) : null; if (ns) { S.grew.push({ w: it.w, s: ns }); earn(2); } earn(1); }
-    else missWord(it.w);
+  if (CHECKS.includes(it.type) && it.first) logAnswer(it, true); // misses are logged in wrong()
+  // A cold read she gets right goes straight in as a word she can read; a miss goes in for practice.
+  if (it.cold && it.first && !state.words[it.w]) state.words[it.w] = { s: 1, last: today(), ok: 1, miss: 0, at: new Date().toISOString() };
+  else if (it.w && state.words[it.w]) {
+    // Only reading print, unaided, on the first try grows a word. Building (spelling), balloons and retries are practice.
+    if (it.first && !it.retry) { const ns = READS.includes(it.type) ? grow(it.w) : null; if (ns) { S.grew.push({ w: it.w, s: ns }); earn(2); } earn(1); }
+    else if (!it.first) missWord(it.w);
   }
   if (it.type === 'bookq') finishBook(it.book);
   it.msg = 'ok';
-  const lines = it.type === 'teach' ? [LINES.teachThanks, it.w] : it.type === 'bookq' ? [LINES.bookDone] : [praise()];
+  const lines = it.type === 'teach' ? [LINES.teachThanks, it.w] : it.type === 'bookq' ? [LINES.bookDone] : it.type === 'page' ? [LINES.pageThanks, it.text] : [praise()];
   S.bubble = it.type === 'teach' ? 'Oh! Thank you for teaching me!' : it.type === 'bookq' ? 'You read the whole book!' : lines[0];
   save(); render(); if (el) burst(el, it.type === 'balloon' ? 22 : 14);
   sparkleSays(lines);
 }
 function wrong(it, val) {
+  if (it.first) {
+    if (CHECKS.includes(it.type) && it.type !== 'build') logAnswer(it, false);
+    if (it.cold && !state.words[it.w]) { state.words[it.w] = { s: 0, last: null, ok: 0, miss: 0, at: new Date().toISOString() }; S.planted.push(it.w); }
+    if (READS.includes(it.type) && !it.retry) { slipWord(it.w); requeue(it); }
+    if (it.type === 'sentence' && !it.retry) requeue(it);
+  }
   it.first = false; it.tries++; if (val !== undefined && !it.wrong.includes(val)) it.wrong.push(val);
   boop(); haptic('error'); it.msg = 'bad'; S.bubble = "Hmm, let's look again together.";
   render();
@@ -324,6 +355,13 @@ function wrong(it, val) {
   if (it.type === 'pic' || it.type === 'teach') lines.push(LINES.soundOut, it.w);
   else if (it.type !== 'sentence' && it.type !== 'bookq' && it.w) lines.push(it.w);
   sparkleSays(lines);
+}
+/* A missed check comes back near the end of the session, after Sparkle has shown the answer. */
+function requeue(it) {
+  const copy = it.type === 'sentence' ? { type: 'sentence', text: it.text, q: it.q, opts: shuffle(it.opts), answer: it.answer } : makeItem(it.w, it.type);
+  copy.retry = true; copy.cold = false;
+  let at = S.items.length; while (at > S.i + 1 && ['section', 'sentence'].includes(S.items[at - 1].type) && it.type !== 'sentence') at--;
+  S.items.splice(Math.max(at, S.i + 2), 0, copy);
 }
 function finishBook(b) {
   const rec = state.books[b.id] || { reads: 0, grownup: false, first: null };
@@ -481,8 +519,8 @@ function vSession() {
       foot = `<button class="btn" data-act="introDone">Got it!</button>`; break;
     }
     case 'meet':
-      body = `${sp}<div class="card meet" style="align-items:center">${it.pic ? `<div class="big-pic">${it.pic}</div>` : ''}${graphemeRow(it.w)}${it.read ? `<div class="planted pop"><span style="font-size:52px">⭐</span><b>New word!</b></div>` : ''}</div>`;
-      foot = it.read ? `<button class="btn ok" data-act="next">Next</button>` : `<button class="btn" data-act="meetSaid">I said it!</button>`; break;
+      body = `${sp}<div class="card meet" style="align-items:center">${it.pic ? `<div class="big-pic">${it.pic}</div>` : ''}${graphemeRow(it.w)}</div>`;
+      foot = `<button class="btn" data-act="meetDone">Next</button>`; break;
     case 'pic': case 'teach':
       body = `${sp}${it.type === 'teach' ? `<div class="cap center-t">Teach Sparkle!</div>` : ''}<div class="card" style="align-items:center">${graphemeRow(it.w)}</div>
         <div class="opts">${it.opts.map(o => `<button class="opt ${optClass(o)}" data-act="ans" data-arg="${o}" aria-label="picture">${o}</button>`).join('')}</div>`; break;
@@ -495,19 +533,20 @@ function vSession() {
     case 'balloon':
       body = `${sp}<div class="balloons">${it.opts.map((o, k) => `<button class="balloon b${k} ${it.done && o === it.answer ? 'popped' : ''} ${it.wrong.includes(o) ? 'wobble' : ''}" data-act="ans" data-arg="${esc(o)}" aria-label="${esc(o)}">${ICON.balloon(it.colors[k])}<span class="reading">${esc(o)}</span></button>`).join('')}</div><div class="tiny muted center-t">Tap Sparkle to hear it again</div>`; break;
     case 'sentence':
-      body = `${sp}<div class="card"><div class="sentence" style="font-size:30px">${it.text.split(' ').map(w => `<span data-act="sayword" data-arg="${esc(w.replace(/[^A-Za-z']/g, ''))}">${esc(w)}</span>`).join('')}</div></div>
+      body = `${sp}<div class="card"><div class="sentence" style="font-size:30px">${it.text.split(' ').map(w => `<span data-act="helpword" data-arg="${esc(w.replace(/[^A-Za-z']/g, ''))}">${esc(w)}</span>`).join('')}</div></div>
         <div class="h2 center-t">${esc(it.q)}</div><div class="opts">${it.opts.map(o => `<button class="opt ${optClass(o)}" data-act="ans" data-arg="${o}" aria-label="picture">${o}</button>`).join('')}</div>`; break;
     case 'cover':
       body = `<div class="stage"><div class="book-cover big" style="background:${it.book.color}"><div class="cover-ic">${it.book.cover}</div><div class="cover-title">${esc(it.book.title)}</div></div>${sparkle(130, 'happy')}</div>`;
       foot = `<button class="btn" data-act="next">Open the book 📖</button>`; break;
     case 'page':
-      body = `${sp}<div class="card page" style="border-top:10px solid ${it.book.color}"><div class="cap">${esc(it.book.title)} · page ${it.i + 1}</div><div class="sentence">${it.text.split(' ').map(w => `<span data-act="sayword" data-arg="${esc(w.replace(/[^A-Za-z']/g, ''))}">${esc(w)}</span>`).join('')}</div><div class="page-ic">${it.book.cover}</div></div>
-        <div class="tiny muted center-t">${it.who === 'mel' ? 'Read it out loud to Sparkle. Tap a word if it’s tricky.' : 'Follow along while Sparkle reads.'}</div>`;
-      foot = it.who === 'mel' && !it.read ? `<button class="btn" data-act="readPage">I read it! 🌟</button>` : `<button class="btn ok" data-act="next">Next page</button>`; break;
-    case 'readaloud':
-      body = `${sp}<div class="card page" style="border-top:10px solid #B79CF0"><div class="sentence">${it.text.split(' ').map(w => `<span data-act="sayword" data-arg="${esc(w.replace(/[^A-Za-z']/g, ''))}">${esc(w)}</span>`).join('')}</div></div>
-        <div class="tiny muted center-t">Read it out loud. Tap a word if it's tricky.<br>Grown-up: tap the button when she has read it.</div>`;
-      foot = it.read ? `<button class="btn ok" data-act="next">Next</button>` : `<button class="btn" data-act="readPage">She read it! 🌟</button>`; break;
+    {
+      const mel = it.who === 'mel';
+      const word = w => { const clean = w.replace(/[^A-Za-z']/g, ''); const cls = mel && it.done && clean === it.target ? 'found' : mel && it.wrong.includes(clean) ? 'nope' : '';
+        return `<span class="${cls}" data-act="${mel ? 'pageWord' : 'sayword'}" data-arg="${esc(clean)}">${esc(w)}</span>`; };
+      body = `${sp}<div class="card page" style="border-top:10px solid ${it.book.color}"><div class="cap">${esc(it.book.title)} · page ${it.i + 1}</div><div class="sentence">${it.text.split(' ').map(word).join('')}</div><div class="page-ic">${it.book.cover}</div></div>
+        <div class="tiny muted center-t">${mel ? 'Read the page. Then tap the word Sparkle says. Tap Sparkle to hear it again.' : 'Follow along while Sparkle reads.'}</div>`;
+      foot = mel && !it.done ? '' : `<button class="btn ok" data-act="next">Next page</button>`; break;
+    }
     case 'bookq':
       body = `${sp}<div class="h2 center-t">${esc(it.book.q)}</div><div class="opts">${it.opts.map(o => `<button class="opt ${optClass(o)}" data-act="ans" data-arg="${o}" aria-label="picture">${o}</button>`).join('')}</div>`; break;
   }
@@ -682,6 +721,37 @@ function vMigrate() {
 }
 
 /* ---------- grown-ups ---------- */
+/* Evidence she is learning, from checked answers only (no self-report anywhere). */
+function learningStats() {
+  const t = today(); const log = state.log || [];
+  const since = n => addDays(t, -n);
+  const pct = a => a.length ? Math.round(a.filter(x => x.ok && !x.help).length / a.length * 100) : null;
+  const reads = log.filter(x => READS.includes(x.t) && !x.retry && !x.cold);
+  const wk = reads.filter(x => x.d >= since(6)), prev = reads.filter(x => x.d >= since(13) && x.d < since(6));
+  const cold = log.filter(x => x.cold && x.d >= since(29));
+  const sent = log.filter(x => x.t === 'sentence' && !x.retry && x.d >= since(13));
+  const fast = wk.filter(x => x.ok && !x.help).map(x => x.ms).sort((a, b) => a - b);
+  const wrongs = log.filter(x => !x.ok && x.d >= since(6));
+  const c = stageCounts();
+  return { week: pct(wk), weekN: wk.length, prev: pct(prev), cold: pct(cold), coldN: cold.length, sent: pct(sent), sentN: sent.length,
+    secs: fast.length ? Math.round(fast[Math.floor(fast.length / 2)] / 100) / 10 : null,
+    guess: wrongs.length >= 4 ? Math.round(wrongs.filter(x => x.ms < 1500).length / wrongs.length * 100) : null, known: c[3], learning: c[0] + c[1] + c[2] };
+}
+function vLearning() {
+  const L = learningStats();
+  const tile = (v, label, sub) => `<div class="card" style="padding:12px;gap:2px;border-radius:18px"><div style="font-size:26px;font-weight:700">${v === null ? '–' : v}</div><div class="tiny muted">${label}</div>${sub ? `<div class="tiny" style="color:var(--pinkDark)">${sub}</div>` : ''}</div>`;
+  const trend = L.week !== null && L.prev !== null ? `${L.week >= L.prev ? '▲' : '▼'} ${Math.abs(L.week - L.prev)} vs last week` : '';
+  return `<div class="card"><div class="h2" style="font-size:17px">Is she learning?</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${tile(L.week === null ? null : L.week + '%', `words read right first try, no help (7 days, ${L.weekN} checks)`, trend)}
+      ${tile(L.known, 'words she knows', `${L.learning} still learning`)}
+      ${tile(L.cold === null ? null : L.cold + '%', `brand-new words read right (30 days, ${L.coldN})`)}
+      ${tile(L.sent === null ? null : L.sent + '%', `sentences understood, no help (14 days, ${L.sentN})`)}
+      ${tile(L.secs === null ? null : L.secs + 's', 'typical time to answer a word (includes Sparkle asking)')}
+      ${tile(L.guess === null ? null : L.guess + '%', 'wrong taps that were quick guesses', L.guess >= 50 ? 'She may be guessing: sit with her once' : '')}
+    </div>
+    <div class="tiny muted">All of this comes from answers the app checks itself. A word counts as known after she reads it right, first try and without help, on 3 different days. A miss drops it back a step. Brand-new words are ones she never practised, made of sounds she has learned: reading those shows she is decoding, not memorising.</div></div>`;
+}
 function vParent() {
   const t = today(); const st = streak(); const c = stageCounts();
   const strip = [...Array(14)].map((_, k) => { const d = addDays(t, -13 + k); const x = day(d); return `<i class="${x.met ? (x.sessions > state.settings.dailyMin ? 'extra' : 'met') : state.shielded.includes(d) ? 'shield' : ''}" title="${d}"></i>`; }).join('');
@@ -691,6 +761,7 @@ function vParent() {
   const cs = { ok: '✅ Saved to the cloud', saving: '⏳ Saving…', offline: '⚠️ Offline — saved on this phone, will upload automatically', idle: '…' }[cloud.status] || cloud.status;
   return `<section class="screen" style="max-width:520px">
     <div class="row"><button class="icon-btn" data-act="nav" data-arg="home" aria-label="Back">${ICON.back}</button><div class="grow"><div class="cap">For grown-ups</div><h1 class="h1">${esc(state.name)}'s reading</h1></div></div>
+    ${vLearning()}
     <div class="card"><div class="h2" style="font-size:17px">Cloud save</div>
       <div class="small">${cs}${cloud.lastOk ? ` · ${new Date(cloud.lastOk).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</div>
       <div class="tiny muted">Family code (use it to open ${esc(state.name)}'s progress on another phone or iPad):</div>
@@ -699,13 +770,8 @@ function vParent() {
       <div class="row" style="flex-wrap:wrap"><input class="code-in" id="joinCode" placeholder="Use a different family code" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn ghost" style="width:auto" data-act="join">Connect</button></div>
       <div class="tiny muted">The cloud keeps a snapshot of every day, so any day can be restored.</div>
       ${S.flash ? `<div class="small" style="color:var(--okInk)">${esc(S.flash)}</div>` : ''}</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-      <div class="card" style="padding:12px;gap:2px;border-radius:18px"><div style="font-size:26px;font-weight:700">${st}</div><div class="tiny muted">day streak</div></div>
-      <div class="card" style="padding:12px;gap:2px;border-radius:18px"><div style="font-size:26px;font-weight:700">${c[3]}</div><div class="tiny muted">words mastered (flowers)</div></div>
-      <div class="card" style="padding:12px;gap:2px;border-radius:18px"><div style="font-size:26px;font-weight:700">${c[0] + c[1] + c[2]}</div><div class="tiny muted">words growing</div></div>
-    </div>
     <div class="card"><div class="h2" style="font-size:17px">Last 14 days</div><div class="strip">${strip}</div>
-      <div class="tiny muted">A word grows one stage on each day she reads it right: seed → sprout → bud → flower. New sounds unlock when 80% of the current sound's words are buds or flowers.</div></div>
+      <div class="tiny muted">${st} day streak. A new sound unlocks when she reads 80% of the current sound's words right on at least 2 different days.</div></div>
     <div class="card"><div class="h2" style="font-size:17px">Sounds</div>${stepRows}</div>
     ${missed.length ? `<div class="card"><div class="h2" style="font-size:17px">Words she's still practising</div><div class="reading" style="font-size:18px;font-weight:700;display:flex;flex-wrap:wrap;gap:6px 12px">${missed.map(([w, x]) => `<span>${esc(w)} <span class="tiny muted">×${x.miss}</span></span>`).join('')}</div><div class="tiny muted">These come up first in her daily read.</div></div>` : ''}
     <div class="card"><div class="h2" style="font-size:17px">Books</div>${BOOKS.filter(bookUnlocked).map(b => { const r = state.books[b.id] || {}; return `<div class="list-row small"><span class="grow">${b.cover} ${esc(b.title)}</span><b>${r.reads || 0}× ${r.grownup ? '👑' : ''}</b></div>`; }).join('') || '<div class="small muted">First book unlocks after the short i sound.</div>'}</div>
@@ -718,12 +784,12 @@ function vParent() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn soft" style="font-size:15px;min-height:50px" data-act="copySummary">Copy summary</button><button class="btn soft" style="font-size:15px;min-height:50px" data-act="export">Export data</button></div></div>
     <div class="card"><div class="h2" style="font-size:17px">Setup</div>
       <div class="list-row"><div class="grow small">Re-run the placement check</div><button class="btn ghost" style="width:auto" data-act="placement">Run</button></div>
-      <div class="tiny muted">Mel Reads v0.5 · Read with Sparkle</div></div>
+      <div class="tiny muted">Mel Reads v0.6 · Read with Sparkle</div></div>
   </section>`;
 }
 function summaryText() {
   const c = stageCounts();
-  return [`Mel Reads — ${today()}`, `Streak ${streak()} · gems ${gems()} · sound step: ${(STEPS[state.stepIdx] || { title: 'all done' }).title}`, `Garden: ${c[3]} flowers, ${c[2]} buds, ${c[1]} sprouts, ${c[0]} seeds`,
+  return [`Mel Reads — ${today()}`, `Streak ${streak()} · sound step: ${(STEPS[state.stepIdx] || { title: 'all done' }).title}`, `Words: ${c[3]} known, ${c[0] + c[1] + c[2]} learning`, (L => `Checked: ${L.week ?? '-'}% words first try (7d) · ${L.cold ?? '-'}% brand-new words · ${L.sent ?? '-'}% sentences · ${L.secs ?? '-'}s per word`)(learningStats()),
     `Practising: ${Object.entries(state.words).filter(([, x]) => x.miss > 0).sort((a, b) => b[1].miss - a[1].miss).slice(0, 10).map(([w, x]) => `${w}(${x.miss})`).join(', ')}`,
     `Books: ${Object.entries(state.books).map(([id, r]) => `${id} ×${r.reads}${r.grownup ? ' 👑' : ''}`).join(', ')}`, `Notes: ${state.notes || '-'}`].join('\n');
 }
@@ -744,10 +810,17 @@ const A = {
   sparkle: (_, el) => { pokeSparkle(el); haptic('light'); burst(el.getBoundingClientRect(), 8); say(spLine && spLine.length ? spLine : [LINES.hi[0]]); },
   sayword: (w, el) => { if (!w) return; say([w]); if (el) { el.classList.remove('bounce'); void el.offsetWidth; el.classList.add('bounce'); } },
   introDone: () => { const it = cur(); if (!state.introsSeen.includes(it.step.id)) state.introsSeen.push(it.step.id); save(); nextItem(); },
-  meetSaid: (_, el) => {
-    const it = cur(); it.read = true; it.done = true;
+  meetDone: () => {
+    const it = cur(); it.done = true;
     if (!state.words[it.w]) { state.words[it.w] = { s: 0, last: null, ok: 0, miss: 0, at: new Date().toISOString() }; S.planted.push(it.w); }
-    chime(); haptic('success'); save(); render(); burst(el.getBoundingClientRect(), 12); say([praise()]);
+    save(); nextItem();
+  },
+  // Tapping a word in a sentence reads it out: that's help, so the answer won't count as unaided.
+  helpword: (w, el) => { const it = cur(); if (it && !it.done) it.helped = true; A.sayword(w, el); },
+  pageWord: (w, el) => {
+    const it = cur(); if (it.done) return;
+    if (w.toLowerCase() === String(it.target).toLowerCase()) { it.w = undefined; correct(it, el.getBoundingClientRect()); }
+    else { wrong(it, w); }
   },
   ans: (v, el) => {
     const it = cur(); if (it.done) return; const r = el.getBoundingClientRect();
@@ -769,7 +842,6 @@ const A = {
     state.outfit[w.slot] = id; checkSets(); save(); fanfare(); confetti(80); haptic('big');
     go('bedtime', { gift: w });
   },
-  readPage: (_, el) => { const it = cur(); if (!it.read) S.treats = (S.treats || 0) + 1; it.read = true; it.done = true; haptic('success'); chime(); render(); burst(el.getBoundingClientRect(), 14); sparkleSays([it.text, LINES.readIt], 'Wow, beautiful reading!'); },
   mood: k => { haptic('light'); S.mood = k; const h = state.history[state.history.length - 1]; if (h) h.mood = k; save(); render(); },
   afterSummary: () => { if (S.justMet) go('goal', { newShield: S.newShield }); else go('home'); },
   grownupRead: id => go('grownup', { book: id, page: 0 }),
