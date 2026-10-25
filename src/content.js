@@ -15,6 +15,9 @@ const WORDS = {
   bl: W('frog:🐸,flag:🚩,drum:🥁,crab:🦀,sled:🛷,clap:👏,swim:🏊,stop:🛑,truck:🚚,plant:🌱,trip,spot,slip,grin'),
   sight: W('the,a,is,I,to,and,you,see,my,go,we,he,she,said,was,of,look,come,like,here'),
 };
+/* Heart words: the letters that don't follow the sounds she knows yet get a little heart.
+   Indexes are graphemes (so 'sh' and 'th' count as one). */
+const HEART = { the: [1], said: [1, 2], was: [1, 2], of: [0, 1], to: [1], you: [1, 2], come: [1, 3], here: [1, 3], like: [1, 3], is: [1], he: [1], she: [1], we: [1], my: [1], go: [1], see: [1, 2], look: [1, 2] };
 const SKILL_NAMES = { a: 'short a', i: 'short i', o: 'short o', e: 'short e', u: 'short u', sh: 'sh', ch: 'ch', th: 'th', bl: 'blends (fr, cl, st…)', sight: 'sight words', read: 'reading sentences' };
 const ALL = new Set(Object.values(WORDS).flat().map(x => x.w));
 const PICS = Object.values(WORDS).flat().filter(x => x.pic);
@@ -146,7 +149,7 @@ const LINES = {
   grew: 'Look how your garden grew!', bye: 'Great job! See you tomorrow!',
   pic: 'Can you find the picture for this word?', hear: 'Listen! Which word did I say?', build: "Let's build the word! Listen.", sight: 'Find the word I say!',
   teach: 'What does this say? Can you read it to me?', teachThanks: 'Oh! Thank you for teaching me!',
-  meet: "Here's a new word for your garden!", meetSay: 'Can you say it too?',
+  meet: "Here's a new word!", meetSay: 'Can you say it too?',
   sentence: 'Read this with me!', myTurn: 'My turn! Listen.', yourTurn: 'Your turn! Read this page to me.', readIt: 'Wow, beautiful reading!',
   balloon: 'Pop the balloon that says',
   oops: "Hmm, let's look again together.", soundOut: "Let's sound it out.",
@@ -154,8 +157,23 @@ const LINES = {
   newSound: 'Psst! I have a secret to tell you!',
   dress: 'Do you like my new look?', dress2: 'I love it! Thank you!', notYet: "Let's save up more gems for that one!",
   garden: 'This is your word garden! Tap a flower to hear its word.', shelf: 'These are your books! Tap one to read it again.',
+  start: "Let's read! I'm so hungry for words!",
+  hungry: ["I'm hungry! Will you read with me?", "Hi Mel! Let's read so I can have my treats!", "Yay, you're here! Let's read together!"],
+  hungryNight: "It's almost bedtime! Let's read before I go to sleep.",
+  asleep: 'Shh... Sparkle is fast asleep. See you tomorrow!',
+  warm: "Let's warm up! Build the word.", read: 'Read the words to give me treats!', story: 'Now read this to me!',
+  readAloud: 'Read it out loud to me!', heard: 'Grown-up: tap when she has read it.',
+  treat: 'Yum! A treat!', feed: 'Yum yum! Thank you for reading to me!', present: 'Pick a present for me!', presentThanks: 'I love it! Thank you, Mel!',
+  bedtime: "I'm so sleepy now. Good night, Mel!",
   praise: ['Sparkly!', 'Amazing reading!', 'You got it!', 'Unicorn power!', 'Super star!', "Yes! You're so smart!", 'Woohoo!'],
 };
+/* What Sparkle promises at bedtime, and shows off the next day. css = the animation class. */
+const TRICKS = [
+  { promise: "Tomorrow I'll learn to jump!", did: 'Look! I learned to jump!', css: 'hop-sp' },
+  { promise: "Tomorrow I'll learn to spin!", did: 'Look! I can spin now!', css: 'spin-sp' },
+  { promise: "Tomorrow I'll learn a dance!", did: 'Look at my new dance!', css: 'dance-sp' },
+  { promise: "Tomorrow I'll learn to wiggle my ears!", did: 'Look! I can wiggle!', css: 'dance-sp' },
+];
 function allSpokenTexts() {
   const out = new Set(); const add = t => { if (t) out.add(t); };
   const words = t => t.split(' ').forEach(w => add(w.replace(/[^A-Za-z']/g, '')));

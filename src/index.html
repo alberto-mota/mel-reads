@@ -285,6 +285,26 @@ body[data-theme=princess] .sp-title{background:linear-gradient(90deg,#F5B83A,#FF
 .plain{width:auto;min-height:44px;font-size:15px;padding:0 8px}
 .sheet .msg .mini-sp{width:64px;flex-shrink:0;background:#fff;border-radius:16px}
 .unlock-card{background:linear-gradient(160deg,#FFF6D8,#FFE8F3)} .unlock-card .mini-sp{width:72px;flex-shrink:0;background:#fff;border-radius:18px}
+/* ===== v0.5: Sparkle loop ===== */
+.spin-sp svg{animation:spinsp 1.6s ease-in-out infinite} @keyframes spinsp{0%,30%{transform:none}65%{transform:rotate(360deg)}100%{transform:rotate(360deg)}}
+.dance-sp svg{animation:dance .9s ease-in-out infinite} @keyframes dance{25%{transform:rotate(-8deg) translateY(-6px)}75%{transform:rotate(8deg) translateY(-6px)}}
+.treats{display:flex;align-items:center;gap:4px;font-weight:700;font-size:18px;background:#fff;border-radius:999px;padding:6px 12px;box-shadow:0 4px 0 #EBD6E3;flex-shrink:0}
+.bowl{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;font-size:34px;max-width:320px}
+.bowl span{animation:pop .45s cubic-bezier(.3,1.6,.5,1) both}
+.meter{width:100%;max-width:320px;height:22px;border-radius:999px;background:#F3E6EF;overflow:hidden;box-shadow:inset 0 2px 3px rgba(120,30,90,.08)}
+.meter i{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,#FFB35C,#FF6FB0);transition:width 1.6s cubic-bezier(.3,1,.5,1)}
+.presents{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%}
+.present{border:0;background:#fff;border-radius:26px;padding:12px;display:flex;flex-direction:column;align-items:center;gap:6px;box-shadow:0 7px 0 #EBD6E3;font-size:16px;font-weight:700}
+.present .mini-sp{width:110px;background:#FFF5FA;border-radius:20px}
+.present:active{transform:translateY(5px);box-shadow:0 2px 0 #EBD6E3}
+.stickers{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px;width:100%;text-align:center}
+.sticker{aspect-ratio:1/1;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;background:rgba(255,255,255,.18);border:2px dashed rgba(255,255,255,.35)}
+.screen:not(.night) .sticker{background:#fff;border:2px dashed #EBD6E3}
+.sticker.on{border:0;background:#FFE27A} .sticker.today{border-style:solid}
+.stickers .tiny{opacity:.8}
+.heart-g{position:relative} .heart-g::before{content:'♥';position:absolute;top:-22px;left:50%;transform:translateX(-50%);font-size:22px;color:#F0428F}
+.screen.night .say-bubble{color:var(--ink)}
+.screen.night .muted{color:#E3D4FF}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
