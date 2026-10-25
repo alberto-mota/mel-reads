@@ -9,7 +9,7 @@ const app = document.getElementById('app');
 /* ================= DATES ================= */
 const pad = n => String(n).padStart(2, '0');
 function ds(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
-function today() { return ds(new Date()); }
+function today() { return ds(new Date(Date.now() + DAY_OFFSET * 86400000)); }
 function addDays(str, n) { const [y, m, d] = str.split('-').map(Number); const x = new Date(y, m - 1, d); x.setDate(x.getDate() + n); return ds(x); }
 function diffDays(a, b) { const p = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).getTime(); }; return Math.round((p(b) - p(a)) / 86400000); }
 function fmtDate(str) { const [y, m, d] = str.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }); }
