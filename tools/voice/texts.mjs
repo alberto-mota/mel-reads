@@ -3,8 +3,9 @@
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const src = fs.readFileSync(new URL('../../src/content.js', import.meta.url), 'utf8');
-const { texts, clipId } = vm.runInNewContext(`${src}\n;({ texts: allSpokenTexts(), clipId })`, {});
+const read = f => fs.readFileSync(new URL(`../../src/${f}`, import.meta.url), 'utf8');
+const src = `${read('content.js')}\n${read('math.js')}\n;({ texts: [...new Set([...allSpokenTexts(), ...mathSpokenTexts().map(clipText)])], clipId })`;
+const { texts, clipId } = vm.runInNewContext(src, {});
 const items = texts.map(text => ({ id: clipId(text), text }));
 const ids = new Set(items.map(x => x.id));
 if (ids.size !== items.length) throw new Error('clip id collision');

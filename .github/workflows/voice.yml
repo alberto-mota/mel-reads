@@ -3,7 +3,7 @@ name: Sparkle's voice
 on:
   workflow_dispatch:
   push:
-    paths: ['src/content.js', 'tools/voice/**', '.github/workflows/voice.yml']
+    paths: ['src/content.js', 'src/math.js', 'tools/voice/**', '.github/workflows/voice.yml']
 permissions:
   contents: write
 concurrency:

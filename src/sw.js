@@ -1,5 +1,5 @@
-const V = 'melreads-v9', VOICE = 'melreads-voice';
-const SHELL = ['./', 'index.html', 'content.js', 'sparkle.js', 'audio.js', 'sync.js', 'app.js', 'testkit.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'apple-touch-icon.png'];
+const V = 'melreads-v10', VOICE = 'melreads-voice';
+const SHELL = ['./', 'index.html', 'content.js', 'sparkle.js', 'audio.js', 'sync.js', 'math.js', 'app.js', 'testkit.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'apple-touch-icon.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V && k !== VOICE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
 // app files: network-first (updates show up right away), cached copy when offline.
