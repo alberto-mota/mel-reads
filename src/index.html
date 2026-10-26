@@ -335,6 +335,40 @@ body[data-theme=princess] .sp-title{background:linear-gradient(90deg,#F5B83A,#FF
 .screen.night .say-bubble{color:var(--ink)}
 .screen.night .muted{color:#E3D4FF}
 @media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+
+/* v0.7 delight: three stages per tap reaction (delight.js) */
+.float-emo{position:fixed;z-index:80;pointer-events:none;font-style:normal;font-weight:700;color:#B79CF0;animation:floatemo 1.8s ease-out forwards}
+@keyframes floatemo{0%{transform:translate(0,0) scale(.6);opacity:0}15%{opacity:1;transform:translate(0,-10px) scale(1)}100%{transform:translate(var(--dx),-130px) scale(1.1);opacity:0}}
+.sp.poke-hop svg{animation:pokehop .85s cubic-bezier(.3,1.5,.5,1)}
+@keyframes pokehop{0%{transform:none}20%{transform:scale(1.12,.86) translateY(6px)}50%{transform:scale(.92,1.1) translateY(-34px) rotate(-6deg)}80%{transform:scale(1.06,.95)}100%{transform:none}}
+.sp.poke-spin svg{animation:pokespin 1.2s cubic-bezier(.5,0,.3,1)}
+@keyframes pokespin{0%{transform:none}30%{transform:translateY(-30px) rotate(0)}75%{transform:translateY(-30px) rotate(720deg)}100%{transform:rotate(720deg)}}
+.sp.poke-sneeze svg{animation:sneeze 1.3s ease-in-out}
+@keyframes sneeze{0%{transform:none}25%{transform:rotate(-8deg) scale(1.04)}45%{transform:rotate(-12deg) scale(1.08) translateY(-4px)}55%{transform:rotate(14deg) scale(.94) translateX(10px)}70%{transform:rotate(-3deg)}100%{transform:none}}
+.sp.poke-hic svg{animation:hic 1.5s ease-out}
+@keyframes hic{0%,30%,60%,100%{transform:none}10%,40%,70%{transform:translateY(-16px) scale(1.04,.96)}}
+.sp.poke-dance svg{animation:dance .6s ease-in-out 3}
+.sp.poke-roll svg{animation:roll 1.5s ease-in-out}
+@keyframes roll{0%,100%{transform:none}40%,60%{transform:rotate(-12deg) translateX(-8px)}}
+.wave-ch{display:inline-block;animation:wavech .55s ease-out both}
+@keyframes wavech{40%{transform:translateY(-14px) scale(1.2);color:var(--pink)}}
+.rainbow-word{animation:rainbow 1.5s linear;display:inline-block}
+@keyframes rainbow{0%{color:#FF5C8A;transform:scale(1)}20%{color:#FFA94D;transform:scale(1.35) rotate(-4deg)}40%{color:#F2C200}60%{color:#3DBE7A;transform:scale(1.35) rotate(4deg)}80%{color:#4C9BFF}100%{color:inherit;transform:scale(1)}}
+button.sticker{font:inherit;font-size:24px;padding:0;width:100%;color:inherit;cursor:pointer}
+.pop-once{animation:pop .45s cubic-bezier(.3,1.6,.5,1)}
+.spin-once{animation:spin1 .85s ease-in-out} @keyframes spin1{to{transform:rotate(360deg) scale(1)}50%{transform:rotate(180deg) scale(1.25)}}
+.wave-once{animation:waveonce .6s ease-out} @keyframes waveonce{40%{transform:translateY(-12px) scale(1.12)}}
+.wobble-once{animation:wobble1 .55s ease-in-out} @keyframes wobble1{25%{transform:rotate(-12deg)}50%{transform:rotate(10deg)}75%{transform:rotate(-5deg)}}
+.jelly{animation:jelly .8s ease-out} @keyframes jelly{20%{transform:scale(1.25,.8)}40%{transform:scale(.85,1.2)}60%{transform:scale(1.1,.92)}80%{transform:scale(.97,1.04)}}
+.sticker.peek::after{content:attr(data-peek);position:absolute;opacity:.45;animation:peek 1.5s ease-in-out forwards}
+.sticker{position:relative}
+@keyframes peek{0%{opacity:0;transform:scale(.4)}25%,75%{opacity:.5;transform:scale(1)}100%{opacity:0;transform:scale(.8)}}
+.fly-berry{position:fixed;z-index:80;font-size:34px;font-style:normal;pointer-events:none;animation:flyberry .65s cubic-bezier(.5,-0.4,.6,1) forwards}
+@keyframes flyberry{to{transform:translate(var(--tx),var(--ty)) scale(.4) rotate(200deg);opacity:.6}}
+.bowl span,.treats,.stage-ic,.big-pic,.page-ic{cursor:pointer;-webkit-tap-highlight-color:transparent}
+.opt.nudge,.tile.nudge,.sentence span.nudge{animation:nudge 1.2s ease-in-out infinite}
+@keyframes nudge{50%{box-shadow:0 0 0 6px rgba(61,190,122,.35);transform:scale(1.05)}}
+@media (prefers-reduced-motion: reduce){.float-emo,.fly-berry{display:none}.sp[class*=poke-] svg,.wave-ch,.rainbow-word,.spin-once,.wave-once,.wobble-once,.jelly,.pop-once{animation:none}}
 </style>
 </head>
 <body>
@@ -345,6 +379,7 @@ body[data-theme=princess] .sp-title{background:linear-gradient(90deg,#F5B83A,#FF
 <script src="sync.js"></script>
 <script src="math.js"></script>
 <script src="app.js"></script>
+<script src="delight.js"></script>
 <script src="testkit.js"></script>
 <script>
 if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }

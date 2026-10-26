@@ -436,7 +436,7 @@ function isLate() { const [hh, mm] = state.settings.reminder.split(':').map(Numb
 const STICKERS = ['🦄', '⭐', '🌈', '🍓', '💖', '🌙', '🎀'];
 function stickerWeek() {
   const t = today(); const [y, m, d] = t.split('-').map(Number); const mon = addDays(t, -((new Date(y, m - 1, d).getDay() + 6) % 7));
-  return `<div class="stickers">${[...Array(7)].map((_, k) => { const dd = addDays(mon, k); const on = day(dd).met; return `<div><div class="sticker ${on ? 'on' : ''} ${dd === t ? 'today' : ''}">${on ? STICKERS[k] : ''}</div><div class="tiny">${'MTWTFSS'[k]}</div></div>`; }).join('')}</div>`;
+  return `<div class="stickers">${[...Array(7)].map((_, k) => { const dd = addDays(mon, k); const on = day(dd).met; return `<div><button class="sticker ${on ? 'on' : ''} ${dd === t ? 'today' : ''}" data-act="sticker" data-arg="${k}" aria-label="${'MTWTFSS'[k]} sticker">${on ? STICKERS[k] : ''}</button><div class="tiny">${'MTWTFSS'[k]}</div></div>`; }).join('')}</div>`;
 }
 function vHome() {
   const t = today(); const met = day(t).met; const night = isLate(); const p = state.promise;
@@ -477,7 +477,7 @@ function vFeed() {
     ${sparkle(190, 'cheer', 'hop-sp')}
     <h1 class="h1">Yum yum!</h1>
     <div class="muted" style="font-size:19px">${math ? `You caught ${n} star${n === 1 ? '' : 's'} for Sparkle!` : `You gave Sparkle ${n} treat${n === 1 ? '' : 's'} by reading!`}</div>
-    <div class="bowl">${[...Array(n)].map((_, k) => `<span style="animation-delay:${k * 0.12}s">${math ? '⭐' : '🍓'}</span>`).join('')}</div>
+    <div class="bowl">${[...Array(n)].map((_, k) => `<span data-act="berry" style="animation-delay:${k * 0.12}s">${math ? '⭐' : '🍓'}</span>`).join('')}</div>
     <div class="cap">Sparkle's happy meter</div>
     <div class="meter"><i data-meter="${Math.min(100, 40 + n * 6)}"></i></div>
     <div class="spacer"></div>
@@ -509,18 +509,20 @@ function vBedtime() {
 function graphemeRow(w) { const h = HEART[String(w).toLowerCase()] || []; return `<div class="target">${graphemes(w).map((g, k) => `<div class="g ${g.length > 1 ? 'di' : ''} ${h.includes(k) ? 'heart-g' : ''}"><b>${esc(g)}</b><i></i></div>`).join('')}</div>`; }
 function sessionTop() {
   const n = S.items.length; const pct = Math.round(((S.i + (cur().done ? 1 : 0)) / n) * 100);
-  return `<div class="row"><button class="icon-btn" data-act="quit" aria-label="Stop">${ICON.close}</button><div class="bar"><i style="width:${pct}%"></i></div><div class="treats" aria-label="${S.treats || 0} treats">${S.kind === 'math' ? '⭐' : '🍓'} ${S.treats || 0}</div></div>`;
+  return `<div class="row"><button class="icon-btn" data-act="quit" aria-label="Stop">${ICON.close}</button><div class="bar"><i style="width:${pct}%"></i></div><div class="treats" data-act="treatTap" aria-label="${S.treats || 0} treats">${S.kind === 'math' ? '⭐' : '🍓'} ${S.treats || 0}</div></div>`;
 }
 function vSession() {
   const it = cur();
   const mood = it.msg === 'ok' ? 'cheer' : it.msg === 'bad' ? 'think' : it.type === 'teach' ? 'think' : it.type === 'intro' ? 'wow' : 'happy';
-  const optClass = v => it.done && v === it.answer ? 'right' : it.wrong.includes(v) ? 'wrong' : '';
+  // Wrong answers escalate help, not fun: after two misses the right answer glows.
+  const nudge = !it.done && it.tries >= 2;
+  const optClass = v => it.done && v === it.answer ? 'right' : it.wrong.includes(v) ? 'wrong' : nudge && v === it.answer ? 'nudge' : '';
   let body = '', foot = '';
   const sp = spRow(mood, S.bubble || '');
   switch (it.type) {
     case 'section': {
       const sec = SECTION[it.key];
-      body = `<div class="stage">${sparkle(210, 'cheer', 'hop-sp')}<div class="stage-ic">${sec.icon}</div><div class="h1 center-t">${sec.title}</div></div>`;
+      body = `<div class="stage">${sparkle(210, 'cheer', 'hop-sp')}<div class="stage-ic" data-act="toy">${sec.icon}</div><div class="h1 center-t">${sec.title}</div></div>`;
       foot = `<button class="btn" data-act="next">Let's go!</button>`; break;
     }
     case 'intro': {
@@ -529,7 +531,7 @@ function vSession() {
       foot = `<button class="btn" data-act="introDone">Got it!</button>`; break;
     }
     case 'meet':
-      body = `${sp}<div class="card meet" style="align-items:center">${it.pic ? `<div class="big-pic">${it.pic}</div>` : ''}${graphemeRow(it.w)}</div>`;
+      body = `${sp}<div class="card meet" style="align-items:center">${it.pic ? `<div class="big-pic" data-act="toy">${it.pic}</div>` : ''}${graphemeRow(it.w)}</div>`;
       foot = `<button class="btn" data-act="meetDone">Next</button>`; break;
     case 'pic': case 'teach':
       body = `${sp}${it.type === 'teach' ? `<div class="cap center-t">Teach Sparkle!</div>` : ''}<div class="card" style="align-items:center">${graphemeRow(it.w)}</div>
@@ -537,9 +539,9 @@ function vSession() {
     case 'hear': case 'sight':
       body = `${sp}<div class="opts ${it.opts.length === 4 ? 'four' : ''}" style="margin-top:8px">${it.opts.map(o => `<button class="opt word ${optClass(o)}" data-act="ans" data-arg="${esc(o)}">${esc(o)}</button>`).join('')}</div><div class="tiny muted center-t">Tap Sparkle to hear it again</div>`; break;
     case 'build':
-      body = `${sp}${it.pic ? `<div class="big-pic" style="text-align:center">${it.pic}</div>` : ''}
+      body = `${sp}${it.pic ? `<div class="big-pic" data-act="toy" style="text-align:center">${it.pic}</div>` : ''}
         <div class="slots">${it.parts.map((p, k) => `<div class="slot ${k < it.built.length ? 'full' : ''}">${k < it.built.length ? esc(it.built[k]) : ''}</div>`).join('')}</div>
-        <div class="tiles">${it.tiles.map(t => `<button class="tile ${t.used ? 'used' : ''} ${S.shakeK === t.k ? 'shake' : ''}" data-act="tile" data-arg="${t.k}">${esc(t.t)}</button>`).join('')}</div>`; break;
+        <div class="tiles">${it.tiles.map(t => `<button class="tile ${t.used ? 'used' : ''} ${S.shakeK === t.k ? 'shake' : ''} ${nudge && !t.used && t.t === it.parts[it.built.length] && t.k === it.tiles.find(x => !x.used && x.t === it.parts[it.built.length]).k ? 'nudge' : ''}" data-act="tile" data-arg="${t.k}">${esc(t.t)}</button>`).join('')}</div>`; break;
     case 'balloon':
       body = `${sp}<div class="balloons">${it.opts.map((o, k) => `<button class="balloon b${k} ${it.done && o === it.answer ? 'popped' : ''} ${it.wrong.includes(o) ? 'wobble' : ''}" data-act="ans" data-arg="${esc(o)}" aria-label="${esc(o)}">${ICON.balloon(it.colors[k])}<span class="reading">${esc(o)}</span></button>`).join('')}</div><div class="tiny muted center-t">Tap Sparkle to hear it again</div>`; break;
     case 'sentence':
@@ -551,9 +553,9 @@ function vSession() {
     case 'page':
     {
       const mel = it.who === 'mel';
-      const word = w => { const clean = w.replace(/[^A-Za-z']/g, ''); const cls = mel && it.done && clean === it.target ? 'found' : mel && it.wrong.includes(clean) ? 'nope' : '';
+      const word = w => { const clean = w.replace(/[^A-Za-z']/g, ''); const cls = mel && it.done && clean === it.target ? 'found' : mel && it.wrong.includes(clean) ? 'nope' : mel && nudge && clean === it.target ? 'nudge' : '';
         return `<span class="${cls}" data-act="${mel ? 'pageWord' : 'sayword'}" data-arg="${esc(clean)}">${esc(w)}</span>`; };
-      body = `${sp}<div class="card page" style="border-top:10px solid ${it.book.color}"><div class="cap">${esc(it.book.title)} · page ${it.i + 1}</div><div class="sentence">${it.text.split(' ').map(word).join('')}</div><div class="page-ic">${it.book.cover}</div></div>
+      body = `${sp}<div class="card page" style="border-top:10px solid ${it.book.color}"><div class="cap">${esc(it.book.title)} · page ${it.i + 1}</div><div class="sentence">${it.text.split(' ').map(word).join('')}</div><div class="page-ic" data-act="toy">${it.book.cover}</div></div>
         <div class="tiny muted center-t">${mel ? 'Read the page. Then tap the word Sparkle says. Tap Sparkle to hear it again.' : 'Follow along while Sparkle reads.'}</div>`;
       foot = mel && !it.done ? '' : `<button class="btn ok" data-act="next">Next page</button>`; break;
     }
@@ -797,7 +799,7 @@ function vParent() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn soft" style="font-size:15px;min-height:50px" data-act="copySummary">Copy summary</button><button class="btn soft" style="font-size:15px;min-height:50px" data-act="export">Export data</button></div></div>
     <div class="card"><div class="h2" style="font-size:17px">Setup</div>
       <div class="list-row"><div class="grow small">Re-run the placement check</div><button class="btn ghost" style="width:auto" data-act="placement">Run</button></div>
-      <div class="tiny muted">Mel Reads v0.7 · Read and count with Sparkle</div></div>
+      <div class="tiny muted">Mel Reads v0.8 · Read and count with Sparkle</div></div>
   </section>`;
 }
 function summaryText() {
@@ -821,8 +823,7 @@ const A = {
   start: k => startSession(k || 'daily'),
   next: () => nextItem(),
   quit: () => go('home'),
-  sparkle: (_, el) => { pokeSparkle(el); haptic('light'); burst(el.getBoundingClientRect(), 8); say(spLine && spLine.length ? spLine : [LINES.hi[0]]); },
-  sayword: (w, el) => { if (!w) return; say([w]); if (el) { el.classList.remove('bounce'); void el.offsetWidth; el.classList.add('bounce'); } },
+  // sparkle, sayword, sticker, berry, treatTap and toy live in delight.js (three stages per tap reaction).
   introDone: () => { const it = cur(); if (!state.introsSeen.includes(it.step.id)) state.introsSeen.push(it.step.id); save(); nextItem(); },
   meetDone: () => {
     const it = cur(); it.done = true;
