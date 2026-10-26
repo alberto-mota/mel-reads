@@ -72,6 +72,23 @@ function mergeStates(a, b) {
     m.books[id] = { reads: Math.max(x.reads || 0, y.reads || 0), grownup: !!(x.grownup || y.grownup), first: [x.first, y.first].filter(Boolean).sort()[0] || null };
   });
   const seen = new Set(); m.history = [...(a.history || []), ...(b.history || [])].filter(h => { const k = h.at + (h.kind || ''); if (seen.has(k)) return false; seen.add(k); return true; }).sort((p, q) => (p.at < q.at ? -1 : 1)).slice(-400);
+  if (a.math || b.math) {
+    // Math facts merge like words: the copy with the latest activity wins a fact's box.
+    const ma = a.math || {}, mb = b.math || {}; const fa = ma.facts || {}, fb = mb.facts || {};
+    const mm = { lvl: Math.max(ma.lvl || 0, mb.lvl || 0), intros: [...new Set([...(ma.intros || []), ...(mb.intros || [])])], facts: {}, days: {} };
+    new Set([...Object.keys(fa), ...Object.keys(fb)]).forEach(f => {
+      const x = fa[f], y = fb[f];
+      if (!x || !y) { mm.facts[f] = JSON.parse(JSON.stringify(x || y)); return; }
+      const act = z => [z.last || '', z.slip || ''].sort().pop();
+      const hi = act(x) === act(y) ? (x.b >= y.b ? x : y) : act(x) > act(y) ? x : y;
+      mm.facts[f] = Object.assign(JSON.parse(JSON.stringify(hi)), { ok: Math.max(x.ok || 0, y.ok || 0), miss: Math.max(x.miss || 0, y.miss || 0), days: Math.max(x.days || 0, y.days || 0) });
+    });
+    new Set([...Object.keys(ma.days || {}), ...Object.keys(mb.days || {})]).forEach(d => {
+      const x = (ma.days || {})[d] || {}, y = (mb.days || {})[d] || {};
+      mm.days[d] = (x.total || 0) >= (y.total || 0) ? Object.assign({}, x) : Object.assign({}, y);
+    });
+    m.math = mm;
+  }
   m.legacyV1 = a.legacyV1 || b.legacyV1 || null;
   m.createdAt = [a.createdAt, b.createdAt].filter(Boolean).sort()[0] || m.createdAt;
   return m;

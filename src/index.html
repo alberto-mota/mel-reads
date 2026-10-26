@@ -119,6 +119,33 @@ button{font-family:inherit;color:inherit;cursor:pointer;-webkit-appearance:none;
 .sentence span:active{background:#FFE3F0}
 .sentence span.found{background:#C9F5DC;color:#1F7A4A}
 .sentence span.nope{background:#FFE0E0;text-decoration:line-through;text-decoration-color:#E05A5A}
+/* Count with Sparkle (math.js) */
+.btn.sky{background:linear-gradient(180deg,#6CC0FF,#3B8FF0);box-shadow:0 6px 0 #1F5FB0,0 14px 24px -10px rgba(31,95,176,.5);text-shadow:0 1px 0 rgba(10,50,110,.25)}
+.btn.sky:active{box-shadow:0 1px 0 #1F5FB0}
+.glow-sky{animation:glowsky 2.2s ease-in-out infinite} @keyframes glowsky{50%{box-shadow:0 6px 0 #1F5FB0,0 0 0 8px rgba(59,143,240,.18)}}
+.math-card{align-items:center;gap:14px;padding:16px 10px}
+.eq{display:flex;align-items:center;justify-content:center;gap:10px;font-family:'Fredoka',sans-serif;font-weight:700;font-size:72px;line-height:1}
+.eq i{font-style:normal;color:var(--muted);font-size:56px} .eq .na{color:var(--pinkDark)} .eq .nb{color:var(--lavInk)}
+.eq .q{min-width:72px;text-align:center;border-radius:20px;background:#F6ECF3;padding:4px 10px;color:#B79AAE}
+.eq .q.got{background:#E3F9EF;color:var(--okInk);animation:pop .45s cubic-bezier(.3,1.6,.5,1)}
+.eq.small{font-size:22px;justify-content:flex-start;gap:4px;color:var(--okInk)}
+.dots{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+.dgrp{display:grid;gap:6px;min-width:22px} .dgrp i{width:22px;height:22px;border-radius:50%;display:block}
+.dgrp.a i{background:#F0428F;box-shadow:0 3px 0 #A3175C} .dgrp.b i{background:#8B5CF6;box-shadow:0 3px 0 #5B2EC6}
+.dgrp em{font-style:normal;font-size:20px;color:var(--muted);grid-column:1/-1}
+.dplus{font-size:30px;font-weight:700;color:var(--muted)}
+.dots.counting i{animation:pop .5s cubic-bezier(.3,1.6,.5,1) both}
+.dots.counting .dgrp i:nth-child(2){animation-delay:.1s}.dots.counting .dgrp i:nth-child(3){animation-delay:.2s}.dots.counting .dgrp i:nth-child(4){animation-delay:.3s}.dots.counting .dgrp i:nth-child(5){animation-delay:.4s}.dots.counting .dgrp i:nth-child(6){animation-delay:.5s}.dots.counting .dgrp i:nth-child(7){animation-delay:.6s}.dots.counting .dgrp i:nth-child(8){animation-delay:.7s}.dots.counting .dgrp i:nth-child(9){animation-delay:.8s}
+.dots.counting .dgrp.b i{animation-delay:1s}
+.opt.num{font-family:'Fredoka',sans-serif;font-size:52px;font-weight:700;min-height:96px;color:var(--ink)}
+.help-dots{margin-top:4px} .mini-dots{display:flex;gap:4px} .mini-dots i{width:10px;height:10px;border-radius:50%;background:var(--lavInk)}
+.combo{align-self:center;background:linear-gradient(180deg,#FFB35C,#F08A24);color:#fff;font-weight:700;font-size:18px;border-radius:999px;padding:6px 16px;box-shadow:0 4px 0 #B9600C;margin:-6px 0}
+.star-pop{font-size:40px;animation:pop .6s cubic-bezier(.3,1.6,.5,1)}
+.mgrid{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));gap:3px;font-size:11px;text-align:center}
+.mgrid b{color:var(--muted);font-weight:700;align-self:center}
+.mf{display:block;border-radius:6px;padding:4px 0;font-style:normal;font-weight:700;background:#F3EEF6;color:#B9AFC4}
+.mf.b0,.mf.b1{background:#FFE0C2;color:#8A4A06} .mf.b2,.mf.b3{background:#FFF1B8;color:#7A5A00} .mf.b4,.mf.b5{background:#BFF0D6;color:#0E6B47} .mf.b6{background:#22B07D;color:#fff}
+.mf.key{display:inline-block;width:12px;height:12px;padding:0;vertical-align:-2px;margin:0 3px 0 8px}
 /* bottom feedback sheet */
 .sheet{position:fixed;left:0;right:0;bottom:0;margin:0 auto;max-width:480px;padding:18px 18px calc(env(safe-area-inset-bottom) + 18px);border-radius:30px 30px 0 0;display:flex;flex-direction:column;gap:14px;animation:slideUp .32s cubic-bezier(.2,1.2,.4,1);z-index:20}
 .sheet.ok{background:#E3F9EF;box-shadow:0 -10px 30px -10px rgba(34,176,125,.35)}
@@ -316,6 +343,7 @@ body[data-theme=princess] .sp-title{background:linear-gradient(90deg,#F5B83A,#FF
 <script src="sparkle.js"></script>
 <script src="audio.js"></script>
 <script src="sync.js"></script>
+<script src="math.js"></script>
 <script src="app.js"></script>
 <script src="testkit.js"></script>
 <script>

@@ -1,5 +1,5 @@
 'use strict';
-/* Mel Reads v0.5 — Read with Sparkle.
+/* Mel Reads v0.7 — Read with Sparkle, plus Count with Sparkle (addition practice, see math.js).
    One daily adventure (~5 min): warm up (build words) → read words for treats → read a sentence to Sparkle
    → Sparkle eats → pick a present → bedtime, with a promise of a new trick tomorrow.
    Mel mostly plays alone, so every step is something the app can check: no "I read it" buttons.
@@ -153,6 +153,7 @@ const SECTION = {
   plant: { title: 'Plant new words', icon: '🌱', line: () => LINES.plant },
   game: { title: 'Balloon game', icon: '🎈', line: () => LINES.game },
   story: { title: 'Read to Sparkle', icon: '📖', line: () => LINES.story },
+  math: { title: 'Count with Sparkle', icon: '🔢', line: () => MATH_LINES.section },
 };
 
 /* ================= SPARKLE ON SCREEN ================= */
@@ -248,6 +249,7 @@ function buildSession(kind) {
   const t = today(); const items = [];
   if (kind.startsWith('book:')) { pushBook(items, BOOKS.find(x => x.id === kind.slice(5))); return items; }
   if (kind === 'daily') return buildDaily();
+  if (kind === 'math') return buildMath();
   const planted = Object.entries(state.words);
   const due = planted.filter(([, x]) => x.s < 3 && x.last !== t).sort((a, b) => a[1].s - b[1].s || (b[1].miss || 0) - (a[1].miss || 0) || Math.random() - 0.5).map(e => e[0]);
   const reviews = shuffle(planted.filter(([, x]) => x.s >= 3 && x.last !== t && (!x.last || diffDays(x.last, t) >= 5)).map(e => e[0]));
@@ -280,7 +282,7 @@ function startSession(kind) {
   let items = [];
   try { items = buildSession(kind); } catch (e) { console.error('session build failed', e); }
   if (!items.length) { go('home'); return; }
-  S = { view: 'session', kind, items, i: 0, started: Date.now(), grew: [], planted: [], gems: 0, right: 0, total: 0, treats: 0, bookDone: null, bonus: day(today()).met };
+  S = { view: 'session', kind, items, i: 0, started: Date.now(), grew: [], planted: [], gems: 0, right: 0, total: 0, treats: 0, combo: 0, bookDone: null, bonus: day(today()).met };
   enterItem(); render(); afterEnter();
 }
 function cur() { return S.items[S.i]; }
@@ -304,16 +306,21 @@ function itemPrompt(it) {
     case 'cover': return [it.book.title];
     case 'page': return it.who === 'sparkle' ? [LINES.myTurn, it.text] : [LINES.findWord, it.target];
     case 'bookq': return [it.book.q];
+    case 'math': return mathAsk(it);
+    case 'mintro': { const L = MATH_LEVELS[it.lvl]; return [MATH_LINES.newKind, L.intro, `${L.ex[0]} ${MATH_LINES.plus} ${L.ex[1]} is ${L.ex[0] + L.ex[1]}.`]; }
   }
   return [];
 }
 function bubbleFor(it) {
+  if (it.type === 'math') return `${it.a} + ${it.b} = ?`;
+  if (it.type === 'mintro') return MATH_LINES.newKind;
   return { section: SECTION[it.key] && SECTION[it.key].line(), intro: it.step && it.step.intro, meet: "Here's a new word!", pic: 'Can you find the picture for this word?', teach: 'What does this say? Can you read it to me?', hear: 'Listen! Which word did I say?', sight: 'Find the word I say!', build: "Let's build the word! Listen.", balloon: 'Pop the balloon that says…', sentence: 'Read it by yourself. Then answer!', cover: it.book && it.book.title, page: it.who === 'sparkle' ? 'My turn! Listen.' : 'Your turn! Read the page, then tap the word I say.', bookq: it.book && it.book.q }[it.type] || '';
 }
 function afterEnter() {
-  if (S.view === 'session') { const it = cur(); setTimeout(() => { if (S.view === 'session' && cur() === it) sparkleSays(itemPrompt(it)); }, 250); }
+  // Math answer times start when Sparkle finishes asking, so a slow voice doesn't count against her.
+  if (S.view === 'session') { const it = cur(); setTimeout(() => { if (S.view === 'session' && cur() === it) { const p = sparkleSays(itemPrompt(it)); if (it.type === 'math') p.then(() => { if (cur() === it && !it.done && it.first) it.t0 = Date.now(); }); } }, 250); }
   else if (S.view === 'home' && unlocked && !greeted) { greeted = true; sparkleSays(spLine || [homeLine()]); }
-  else if (S.view === 'feed') sparkleSays([LINES.feed]);
+  else if (S.view === 'feed') sparkleSays([S.kind === 'math' ? MATH_LINES.feed : LINES.feed]);
   else if (S.view === 'present') sparkleSays([LINES.present]);
   else if (S.view === 'bedtime') sparkleSays([LINES.bedtime, TRICKS[(state.promise || { trick: 0 }).trick % TRICKS.length].promise]);
   else if (S.view === 'garden' && unlocked) sparkleSays([LINES.garden]);
@@ -374,6 +381,7 @@ function nextItem() {
   else endSession();
 }
 function endSession() {
+  if (S.kind === 'math') return mathEnd();
   const t = today(); const d = Object.assign({ sessions: 0, met: false, minutes: 0 }, state.days[t]);
   const wasMet = d.met; d.sessions++; d.minutes = Math.round((d.minutes + (Date.now() - S.started) / 60000) * 10) / 10;
   let newShield = false;
@@ -451,6 +459,7 @@ function vHome() {
           ${hasGame ? `<button class="btn soft" data-act="start" data-arg="game">🎈 Balloons</button>` : ''}
           <button class="btn soft" data-act="nav" data-arg="wardrobe">🦄 Dress up</button>
         </div>`}
+    <button class="btn sky ${met && !mathDoneToday() ? 'glow-sky' : ''}" data-act="start" data-arg="math">${mathDoneToday() ? 'Count again 🔢 ✓' : "Let's count! 🔢"}</button>
     ${stickerWeek()}
     ${nav('home')}
   </section>`;
@@ -458,7 +467,7 @@ function vHome() {
 
 /* ---------- end of the adventure: feed Sparkle → present → bedtime ---------- */
 function vFeed() {
-  const n = Math.max(1, S.treats || 0); spLine = [LINES.feed];
+  const n = Math.max(1, S.treats || 0); const math = S.kind === 'math'; spLine = [math ? MATH_LINES.feed : LINES.feed];
   const daily = S.kind === 'daily';
   const next = !daily ? `<button class="btn" data-act="nav" data-arg="home">Done</button>`
     : WARDROBE.some(w => !state.owned.includes(w.id)) ? `<button class="btn" data-act="toPresent">Open your present 🎁</button>`
@@ -466,8 +475,8 @@ function vFeed() {
   return `<section class="screen center" style="gap:16px">
     ${sparkle(190, 'cheer', 'hop-sp')}
     <h1 class="h1">Yum yum!</h1>
-    <div class="muted" style="font-size:19px">You gave Sparkle ${n} treat${n === 1 ? '' : 's'} by reading!</div>
-    <div class="bowl">${[...Array(n)].map((_, k) => `<span style="animation-delay:${k * 0.12}s">🍓</span>`).join('')}</div>
+    <div class="muted" style="font-size:19px">${math ? `You caught ${n} star${n === 1 ? '' : 's'} for Sparkle!` : `You gave Sparkle ${n} treat${n === 1 ? '' : 's'} by reading!`}</div>
+    <div class="bowl">${[...Array(n)].map((_, k) => `<span style="animation-delay:${k * 0.12}s">${math ? '⭐' : '🍓'}</span>`).join('')}</div>
     <div class="cap">Sparkle's happy meter</div>
     <div class="meter"><i data-meter="${Math.min(100, 40 + n * 6)}"></i></div>
     <div class="spacer"></div>
@@ -499,7 +508,7 @@ function vBedtime() {
 function graphemeRow(w) { const h = HEART[String(w).toLowerCase()] || []; return `<div class="target">${graphemes(w).map((g, k) => `<div class="g ${g.length > 1 ? 'di' : ''} ${h.includes(k) ? 'heart-g' : ''}"><b>${esc(g)}</b><i></i></div>`).join('')}</div>`; }
 function sessionTop() {
   const n = S.items.length; const pct = Math.round(((S.i + (cur().done ? 1 : 0)) / n) * 100);
-  return `<div class="row"><button class="icon-btn" data-act="quit" aria-label="Stop">${ICON.close}</button><div class="bar"><i style="width:${pct}%"></i></div><div class="treats" aria-label="${S.treats || 0} treats">🍓 ${S.treats || 0}</div></div>`;
+  return `<div class="row"><button class="icon-btn" data-act="quit" aria-label="Stop">${ICON.close}</button><div class="bar"><i style="width:${pct}%"></i></div><div class="treats" aria-label="${S.treats || 0} treats">${S.kind === 'math' ? '⭐' : '🍓'} ${S.treats || 0}</div></div>`;
 }
 function vSession() {
   const it = cur();
@@ -547,10 +556,12 @@ function vSession() {
         <div class="tiny muted center-t">${mel ? 'Read the page. Then tap the word Sparkle says. Tap Sparkle to hear it again.' : 'Follow along while Sparkle reads.'}</div>`;
       foot = mel && !it.done ? '' : `<button class="btn ok" data-act="next">Next page</button>`; break;
     }
+    case 'math': ({ body, foot } = vMathItem(it, sp)); break;
+    case 'mintro': ({ body, foot } = vMathIntro(it, sp)); break;
     case 'bookq':
       body = `${sp}<div class="h2 center-t">${esc(it.book.q)}</div><div class="opts">${it.opts.map(o => `<button class="opt ${optClass(o)}" data-act="ans" data-arg="${o}" aria-label="picture">${o}</button>`).join('')}</div>`; break;
   }
-  if (it.msg === 'ok' && !['section', 'intro', 'meet', 'cover', 'page'].includes(it.type)) foot = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${sparkle(64, 'cheer', 'mini')}<div class="grow">${esc(S.bubble || 'Sparkly!')}${it.w && it.type !== 'teach' ? `<div class="reading" style="font-size:24px">"${esc(it.w)}"</div>` : ''}</div></div><button class="btn ok" data-act="next">${S.i === S.items.length - 1 ? 'Finish' : 'Next'}</button></div>`;
+  if (it.msg === 'ok' && !['section', 'intro', 'meet', 'cover', 'page', 'math'].includes(it.type)) foot = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${sparkle(64, 'cheer', 'mini')}<div class="grow">${esc(S.bubble || 'Sparkly!')}${it.w && it.type !== 'teach' ? `<div class="reading" style="font-size:24px">"${esc(it.w)}"</div>` : ''}</div></div><button class="btn ok" data-act="next">${S.i === S.items.length - 1 ? 'Finish' : 'Next'}</button></div>`;
   else if (it.msg === 'bad' && (it.type === 'pic' || it.type === 'teach' || it.type === 'build')) foot = `<div class="hint-row reading">${graphemes(it.w).join(' – ')}</div>`;
   return `<section class="screen">${sessionTop()}${body}<div class="spacer"></div>${foot}</section>`;
 }
@@ -762,6 +773,7 @@ function vParent() {
   return `<section class="screen" style="max-width:520px">
     <div class="row"><button class="icon-btn" data-act="nav" data-arg="home" aria-label="Back">${ICON.back}</button><div class="grow"><div class="cap">For grown-ups</div><h1 class="h1">${esc(state.name)}'s reading</h1></div></div>
     ${vLearning()}
+    ${vMathParent()}
     <div class="card"><div class="h2" style="font-size:17px">Cloud save</div>
       <div class="small">${cs}${cloud.lastOk ? ` · ${new Date(cloud.lastOk).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</div>
       <div class="tiny muted">Family code (use it to open ${esc(state.name)}'s progress on another phone or iPad):</div>
@@ -784,13 +796,14 @@ function vParent() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn soft" style="font-size:15px;min-height:50px" data-act="copySummary">Copy summary</button><button class="btn soft" style="font-size:15px;min-height:50px" data-act="export">Export data</button></div></div>
     <div class="card"><div class="h2" style="font-size:17px">Setup</div>
       <div class="list-row"><div class="grow small">Re-run the placement check</div><button class="btn ghost" style="width:auto" data-act="placement">Run</button></div>
-      <div class="tiny muted">Mel Reads v0.6 · Read with Sparkle</div></div>
+      <div class="tiny muted">Mel Reads v0.7 · Read and count with Sparkle</div></div>
   </section>`;
 }
 function summaryText() {
   const c = stageCounts();
   return [`Mel Reads — ${today()}`, `Streak ${streak()} · sound step: ${(STEPS[state.stepIdx] || { title: 'all done' }).title}`, `Words: ${c[3]} known, ${c[0] + c[1] + c[2]} learning`, (L => `Checked: ${L.week ?? '-'}% words first try (7d) · ${L.cold ?? '-'}% brand-new words · ${L.sent ?? '-'}% sentences · ${L.secs ?? '-'}s per word`)(learningStats()),
     `Practising: ${Object.entries(state.words).filter(([, x]) => x.miss > 0).sort((a, b) => b[1].miss - a[1].miss).slice(0, 10).map(([w, x]) => `${w}(${x.miss})`).join(', ')}`,
+    mathSummaryLine(),
     `Books: ${Object.entries(state.books).map(([id, r]) => `${id} ×${r.reads}${r.grownup ? ' 👑' : ''}`).join(', ')}`, `Notes: ${state.notes || '-'}`].join('\n');
 }
 
@@ -823,7 +836,8 @@ const A = {
     else { wrong(it, w); }
   },
   ans: (v, el) => {
-    const it = cur(); if (it.done) return; const r = el.getBoundingClientRect();
+    const it = cur(); if (it.done) return;
+    if (it.type === 'math') return mathAnswer(v, el); const r = el.getBoundingClientRect();
     if (v === it.answer) correct(it, r); else wrong(it, v);
   },
   tile: k => {
@@ -834,6 +848,8 @@ const A = {
       render();
     } else { S.shakeK = Number(k); wrong(it); S.shakeK = null; }
   },
+  mathHelp: () => mathHelp(),
+  mathIntroDone: () => { const it = cur(); const m = mathState(); const id = MATH_LEVELS[it.lvl].id; if (!m.intros.includes(id)) m.intros.push(id); save(); nextItem(); },
   toPresent: () => go('present', { choices: shuffle(WARDROBE.filter(w => !state.owned.includes(w.id))).slice(0, 2), kind: S.kind }),
   toBed: () => go('bedtime'),
   pickPresent: id => {

@@ -12,6 +12,7 @@ A short daily reading game for Mel (age 6), with Sparkle the unicorn. Plain HTML
 | `src/index.html` | Page shell and all styles |
 | `src/app.js` | Screens, lessons, games, progress |
 | `src/content.js` | Word lists, sentences, books, lesson steps, Sparkle's lines and wardrobe |
+| `src/math.js` | Count with Sparkle: single-digit addition with a spaced-review box per fact |
 | `src/sparkle.js` | Sparkle drawing (SVG) |
 | `src/audio.js` | Voice, sound effects, haptics, confetti |
 | `src/sync.js` | Cloud save and merging between devices |
