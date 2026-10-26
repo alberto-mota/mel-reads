@@ -281,6 +281,7 @@ function startSession(kind) {
   try { items = buildSession(kind); } catch (e) { console.error('session build failed', e); }
   if (!items.length) { go('home'); return; }
   S = { view: 'session', kind, items, i: 0, started: Date.now(), grew: [], planted: [], gems: 0, right: 0, total: 0, treats: 0, bookDone: null, bonus: day(today()).met };
+  preloadVoice(items.flatMap(it => [...itemPrompt(it), it.w]));
   enterItem(); render(); afterEnter();
 }
 function cur() { return S.items[S.i]; }

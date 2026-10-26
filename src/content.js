@@ -182,5 +182,18 @@ function allSpokenTexts() {
   BOOKS.forEach(b => { b.lines.forEach(l => { add(l); words(l); }); add(b.q); add(b.title); words(b.title); });
   STEPS.forEach(s => add(s.intro));
   Object.values(LINES).flat().forEach(add);
-  return [...out].filter(Boolean);
+  TRICKS.forEach(t => { add(t.promise); add(t.did); });
+  SETS.forEach(x => { add(x.line); add(`You collected the whole ${x.name} set!`); });
+  WARDROBE.filter(w => w.earn).forEach(w => add(`You earned the ${w.name} for me!`));
+  MORE_LINES.forEach(add);
+  return [...new Set([...out].map(clipText))].filter(Boolean);
+}
+/* Lines app.js says that live outside LINES. */
+const MORE_LINES = ["Ooh! Maybe I'll get this as a present!", 'Back to plain Sparkle!', 'Look saved! Tap it to wear it again.', 'Look replaced!'];
+/* Voice clips are named by a hash of the text, so the recorder (tools/voice) and the app agree without a lookup table. */
+function clipText(t) { return String(t).replace(/[^\p{L}\p{N}\p{P}\s]/gu, '').replace(/\s+/g, ' ').trim(); }
+function clipId(t) {
+  const s = clipText(t); let h = 0x811c9dc5;
+  for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16).padStart(8, '0');
 }
