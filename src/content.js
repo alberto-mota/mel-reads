@@ -165,6 +165,12 @@ const LINES = {
   findWord: 'Your turn! Read the page. Then tap the word', pageThanks: 'Yes! Now I can read it too!',
   treat: 'Yum! A treat!', feed: 'Yum yum! Thank you for reading to me!', present: 'Pick a present for me!', presentThanks: 'I love it! Thank you, Mel!',
   bedtime: "I'm so sleepy now. Good night, Mel!",
+  // Little surprises when Mel taps things again and again (delight.js)
+  giggles: ['Hee hee! That tickles!', 'Ha ha! Stop it!', 'Tee hee hee!'],
+  wheee: 'Wheee!', achoo: ['Ah... ah... ACHOO!', 'Oops! Sparkle sneeze!'], hiccups: 'Hic! Oh no, hiccups! Hic!', danceLine: 'La la la! Dance with me!',
+  shh: "Shh... I'm sleeping.", dreams: ['Mmm... strawberries...', 'Mmm... rainbows...', 'Mmm... one more story...', 'Mmm... so many stars...'],
+  stickersAll: 'Look at all your stickers this week!', stickerFirst: 'Your very first sticker this week!', stickerSoon: "Read with me that day and you'll get this sticker!",
+  nom: 'Nom nom!', full: ['Burp! Oops! Excuse me!', "I'm so full! My tummy is happy!", 'One more? Okay... just one!'], saving: "I'm saving those for later! Keep reading!",
   praise: ['Sparkly!', 'Amazing reading!', 'You got it!', 'Unicorn power!', 'Super star!', "Yes! You're so smart!", 'Woohoo!'],
 };
 /* What Sparkle promises at bedtime, and shows off the next day. css = the animation class. */
