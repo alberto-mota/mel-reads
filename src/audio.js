@@ -25,10 +25,19 @@ function loadClip(t) {
   const id = clipId(t);
   if (!clipBufs.has(id)) {
     const p = fetch(VOICE_DIR + id + '.mp3').then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
-      .then(b => new Promise((res, rej) => audioCtx().decodeAudioData(b, res, rej)));
+      .then(b => new Promise((res, rej) => audioCtx().decodeAudioData(b, res, rej))).then(trimSilence);
     p.catch(() => clipBufs.delete(id)); clipBufs.set(id, p);
   }
   return clipBufs.get(id);
+}
+/* The recordings start and end with about half a second of quiet; skip it so lines follow each other naturally. */
+function trimSilence(buf) {
+  const d = buf.getChannelData(0), th = 0.01, pad = Math.round(buf.sampleRate * 0.03);
+  let a = 0, z = d.length - 1;
+  while (a < z && Math.abs(d[a]) < th) a++;
+  while (z > a && Math.abs(d[z]) < th) z--;
+  const start = Math.max(0, a - pad) / buf.sampleRate, end = Math.min(d.length, z + pad) / buf.sampleRate;
+  return { buffer: buf, offset: start, duration: Math.max(0.05, end - start) };
 }
 /* Fetch clips ahead of time (the service worker keeps them for offline). */
 function preloadVoice(texts) { if (clipIds && audioCtx()) texts.filter(Boolean).filter(hasClip).forEach(t => loadClip(t).catch(() => {})); }
@@ -70,7 +79,7 @@ function sayClips(list, tok, busy) {
     if (tok !== sayToken) return false;
     const c = audioCtx(); if (c.state === 'suspended' && c.resume) c.resume();
     let t = c.currentTime + 0.05;
-    playing = bufs.map(b => { const s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(t); t += b.duration + CLIP_GAP; return s; });
+    playing = bufs.map(b => { const s = c.createBufferSource(); s.buffer = b.buffer; s.connect(c.destination); s.start(t, b.offset, b.duration); t += b.duration + CLIP_GAP; return s; });
     setTalking(true);
     setTimeout(() => { if (tok === sayToken && c.state !== 'running') soundHint(); }, 1500);
     return new Promise(res => {
