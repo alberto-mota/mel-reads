@@ -24,7 +24,7 @@ A short daily reading game for Mel (age 6), with Sparkle the unicorn. Plain HTML
 Sparkle speaks from recorded clips made with [Kokoro](https://github.com/hexgrad/kokoro), an open neural voice (Apache-2.0), instead of the phone's robotic built-in voice. Each clip is named by a hash of its text (`clipId` in `content.js`), so there's no lookup table to keep in sync.
 
 - Everything she can say comes from `allSpokenTexts()` in `content.js` and `mathSpokenTexts()` in `math.js`. If you add a line in `app.js`, add it there too (or to `MORE_LINES`).
-- The **Sparkle's voice** GitHub Action (`.github/workflows/voice.yml`) runs on any push that changes `content.js`, `math.js` or `tools/voice/`. It records only the new lines, removes unused clips, and commits them back to the same branch.
+- The **Sparkle's voice** GitHub Action (`.github/workflows/voice.yml`) runs on pushes to `beta` and `main` that change `content.js`, `math.js` or `tools/voice/`. It records only the new lines, removes unused clips, and commits them back to that branch. Feature branches don't record, so new lines play in the phone's voice on their previews until merged.
 - A line without a clip still works: the app falls back to the built-in voice and logs `[voice] no clip for …` in the console.
 - To hear other voices, open `/voice/samples.html` on the app. Change the voice with `VOICE` in the workflow and `VOICE_DIR` in `audio.js`.
 
