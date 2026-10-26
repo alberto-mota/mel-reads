@@ -16,7 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      # the branch tip, not the pushed commit: a run queued behind another must start from the clips that one committed
       - uses: actions/checkout@v4
+        with: { ref: '${{ github.ref_name }}' }
       - uses: actions/setup-python@v5
         with: { python-version: '3.12', cache: pip, cache-dependency-path: tools/voice/requirements.txt }
       - uses: actions/cache@v4
