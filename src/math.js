@@ -36,6 +36,14 @@ const MATH_LINES = {
   feed: 'You caught so many stars for me!',
 };
 
+/* Everything Count with Sparkle says, for the voice recorder (tools/voice). Keep in step with the say() calls below. */
+function mathSpokenTexts() {
+  const { ask, plus, ...lines } = MATH_LINES, out = Object.values(lines).flatMap(v => typeof v === 'object' ? Object.values(v) : [v]);
+  MATH_FACTS.forEach(({ a, b }) => out.push(`${MATH_LINES.ask} ${a} ${MATH_LINES.plus} ${b}?`, `${a} ${MATH_LINES.plus} ${b} is ${a + b}!`, `${a} ${MATH_LINES.plus} ${b} is ${a + b}.`));
+  MATH_LEVELS.forEach(L => out.push(L.intro));
+  return out;
+}
+
 function mathState() {
   if (!state.math) state.math = { facts: {}, lvl: 0, intros: [], days: {} };
   const m = state.math; m.facts = m.facts || {}; m.intros = m.intros || []; m.days = m.days || {}; m.lvl = m.lvl || 0;
