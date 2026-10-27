@@ -1,8 +1,11 @@
-# Records Sparkle's voice clips whenever the things she says change, and commits them to the same branch.
+# Records Sparkle's voice clips whenever the things she says change on beta or main, and commits them there.
+# Only those two branches, so feature branches never carry their own copies of the clips (binary merge conflicts).
+# On a feature branch's preview, new lines use the phone's voice until the branch is merged into beta.
 name: Sparkle's voice
 on:
   workflow_dispatch:
   push:
+    branches: [beta, main]
     paths: ['src/content.js', 'src/math.js', 'tools/voice/**', '.github/workflows/voice.yml']
 permissions:
   contents: write
@@ -13,7 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
+      # the branch tip, not the pushed commit: a run queued behind another must start from the clips that one committed
       - uses: actions/checkout@v4
+        with: { ref: '${{ github.ref_name }}' }
       - uses: actions/setup-python@v5
         with: { python-version: '3.12', cache: pip, cache-dependency-path: tools/voice/requirements.txt }
       - uses: actions/cache@v4
