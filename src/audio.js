@@ -30,13 +30,21 @@ function loadClip(t) {
   }
   return clipBufs.get(id);
 }
-/* The recordings start and end with about half a second of quiet; skip it so lines follow each other naturally. */
+/* The recordings start and end with about half a second of quiet; skip it so lines follow each other naturally.
+   About one word in five also starts with a tiny click (a few ms of noise, then a gap, then the word): skip that too.
+   Works on 5 ms loudness frames rather than single samples, so a lone spike doesn't count as speech. */
 function trimSilence(buf) {
-  const d = buf.getChannelData(0), th = 0.01, pad = Math.round(buf.sampleRate * 0.03);
-  let a = 0, z = d.length - 1;
-  while (a < z && Math.abs(d[a]) < th) a++;
-  while (z > a && Math.abs(d[z]) < th) z--;
-  const start = Math.max(0, a - pad) / buf.sampleRate, end = Math.min(d.length, z + pad) / buf.sampleRate;
+  const d = buf.getChannelData(0), sr = buf.sampleRate, n = Math.round(sr * 0.005), th = 0.02;
+  const loud = [];
+  for (let i = 0; i + n <= d.length; i += n) { let e = 0; for (let k = i; k < i + n; k++) e += d[k] * d[k]; loud.push(Math.sqrt(e / n) > th); }
+  let a = loud.indexOf(true), z = loud.lastIndexOf(true);
+  if (a < 0) return { buffer: buf, offset: 0, duration: buf.duration };
+  let quiet = a; // frames of quiet available before the speech, for a little lead-in
+  let j = a; while (j <= z && loud[j]) j++;
+  let k = j; while (k <= z && !loud[k]) k++;
+  if (j - a <= 4 && k - j >= 2 && k <= z) { quiet = k - j; a = k; } // click of ≤20 ms, then ≥10 ms gap: start at the word
+  const lead = Math.min(6, quiet), tail = 6; // 30 ms either side
+  const start = (a - lead) * n / sr, end = Math.min(d.length, (z + 1 + tail) * n) / sr;
   return { buffer: buf, offset: start, duration: Math.max(0.05, end - start) };
 }
 /* Fetch clips ahead of time (the service worker keeps them for offline). */
@@ -79,7 +87,12 @@ function sayClips(list, tok, busy) {
     if (tok !== sayToken) return false;
     const c = audioCtx(); if (c.state === 'suspended' && c.resume) c.resume();
     let t = c.currentTime + 0.05;
-    playing = bufs.map(b => { const s = c.createBufferSource(); s.buffer = b.buffer; s.connect(c.destination); s.start(t, b.offset, b.duration); t += b.duration + CLIP_GAP; return s; });
+    playing = bufs.map(b => {
+      // a 10 ms fade-in, so a clip never starts with a click
+      const s = c.createBufferSource(), g = c.createGain(); s.buffer = b.buffer; s.connect(g).connect(c.destination);
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(1, t + 0.01);
+      s.start(t, b.offset, b.duration); t += b.duration + CLIP_GAP; return s;
+    });
     setTalking(true);
     setTimeout(() => { if (tok === sayToken && c.state !== 'running') soundHint(); }, 1500);
     return new Promise(res => {
