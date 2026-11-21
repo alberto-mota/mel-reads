@@ -308,6 +308,8 @@ function itemPrompt(it) {
     case 'page': return it.who === 'sparkle' ? [LINES.myTurn, it.text] : [LINES.findWord, it.target];
     case 'bookq': return [it.book.q];
     case 'math': return mathAsk(it);
+    case 'num': return numAsk(it);
+    case 'nintro': return numIntroLines(it);
     case 'mintro': { const L = MATH_LEVELS[it.lvl]; return [MATH_LINES.newKind, L.intro, `${L.ex[0]} ${MATH_LINES.plus} ${L.ex[1]} is ${L.ex[0] + L.ex[1]}.`]; }
   }
   return [];
@@ -315,11 +317,13 @@ function itemPrompt(it) {
 function bubbleFor(it) {
   if (it.type === 'math') return `${it.a} + ${it.b} = ?`;
   if (it.type === 'mintro') return MATH_LINES.newKind;
+  if (it.type === 'num') return numBubble(it);
+  if (it.type === 'nintro') return NUM_LINES.newKind;
   return { section: SECTION[it.key] && SECTION[it.key].line(), intro: it.step && it.step.intro, meet: "Here's a new word!", pic: 'Can you find the picture for this word?', teach: 'What does this say? Can you read it to me?', hear: 'Listen! Which word did I say?', sight: 'Find the word I say!', build: "Let's build the word! Listen.", balloon: 'Pop the balloon that says…', sentence: 'Read it by yourself. Then answer!', cover: it.book && it.book.title, page: it.who === 'sparkle' ? 'My turn! Listen.' : 'Your turn! Read the page, then tap the word I say.', bookq: it.book && it.book.q }[it.type] || '';
 }
 function afterEnter() {
   // Math answer times start when Sparkle finishes asking, so a slow voice doesn't count against her.
-  if (S.view === 'session') { const it = cur(); setTimeout(() => { if (S.view === 'session' && cur() === it) { const p = sparkleSays(itemPrompt(it)); if (it.type === 'math') p.then(() => { if (cur() === it && !it.done && it.first) it.t0 = Date.now(); }); } }, 250); }
+  if (S.view === 'session') { const it = cur(); setTimeout(() => { if (S.view === 'session' && cur() === it) { const p = sparkleSays(itemPrompt(it)); if (it.type === 'math' || it.type === 'num') p.then(() => { if (S.view === 'session' && cur() === it && !it.done && it.first) it.t0 = Date.now(); }); } }, 250); }
   else if (S.view === 'home' && unlocked && !greeted) { greeted = true; sparkleSays(spLine || [homeLine()]); }
   else if (S.view === 'feed') sparkleSays([S.kind === 'math' ? MATH_LINES.feed : LINES.feed]);
   else if (S.view === 'present') sparkleSays([LINES.present]);
@@ -561,10 +565,12 @@ function vSession() {
     }
     case 'math': ({ body, foot } = vMathItem(it, sp)); break;
     case 'mintro': ({ body, foot } = vMathIntro(it, sp)); break;
+    case 'num': ({ body, foot } = vNumItem(it, sp)); break;
+    case 'nintro': ({ body, foot } = vNumIntro(it, sp)); break;
     case 'bookq':
       body = `${sp}<div class="h2 center-t">${esc(it.book.q)}</div><div class="opts">${it.opts.map(o => `<button class="opt ${optClass(o)}" data-act="ans" data-arg="${o}" aria-label="picture">${o}</button>`).join('')}</div>`; break;
   }
-  if (it.msg === 'ok' && !['section', 'intro', 'meet', 'cover', 'page', 'math'].includes(it.type)) foot = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${sparkle(64, 'cheer', 'mini')}<div class="grow">${esc(S.bubble || 'Sparkly!')}${it.w && it.type !== 'teach' ? `<div class="reading" style="font-size:24px">"${esc(it.w)}"</div>` : ''}</div></div><button class="btn ok" data-act="next">${S.i === S.items.length - 1 ? 'Finish' : 'Next'}</button></div>`;
+  if (it.msg === 'ok' && !['section', 'intro', 'meet', 'cover', 'page', 'math', 'num'].includes(it.type)) foot = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${sparkle(64, 'cheer', 'mini')}<div class="grow">${esc(S.bubble || 'Sparkly!')}${it.w && it.type !== 'teach' ? `<div class="reading" style="font-size:24px">"${esc(it.w)}"</div>` : ''}</div></div><button class="btn ok" data-act="next">${S.i === S.items.length - 1 ? 'Finish' : 'Next'}</button></div>`;
   else if (it.msg === 'bad' && (it.type === 'pic' || it.type === 'teach' || it.type === 'build')) foot = `<div class="hint-row reading">${graphemes(it.w).join(' – ')}</div>`;
   return `<section class="screen">${sessionTop()}${body}<div class="spacer"></div>${foot}</section>`;
 }
@@ -776,6 +782,7 @@ function vParent() {
   return `<section class="screen" style="max-width:520px">
     <div class="row"><button class="icon-btn" data-act="nav" data-arg="home" aria-label="Back">${ICON.back}</button><div class="grow"><div class="cap">For grown-ups</div><h1 class="h1">${esc(state.name)}'s reading</h1></div></div>
     ${vLearning()}
+    ${vNumParent()}
     ${vMathParent()}
     <div class="card"><div class="h2" style="font-size:17px">Cloud save</div>
       <div class="small">${cs}${cloud.lastOk ? ` · ${new Date(cloud.lastOk).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</div>
@@ -799,13 +806,14 @@ function vParent() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn soft" style="font-size:15px;min-height:50px" data-act="copySummary">Copy summary</button><button class="btn soft" style="font-size:15px;min-height:50px" data-act="export">Export data</button></div></div>
     <div class="card"><div class="h2" style="font-size:17px">Setup</div>
       <div class="list-row"><div class="grow small">Re-run the placement check</div><button class="btn ghost" style="width:auto" data-act="placement">Run</button></div>
-      <div class="tiny muted">Mel Reads v0.8 · Read and count with Sparkle</div></div>
+      <div class="tiny muted">Mel Reads v0.9 · Read and count with Sparkle</div></div>
   </section>`;
 }
 function summaryText() {
   const c = stageCounts();
   return [`Mel Reads — ${today()}`, `Streak ${streak()} · sound step: ${(STEPS[state.stepIdx] || { title: 'all done' }).title}`, `Words: ${c[3]} known, ${c[0] + c[1] + c[2]} learning`, (L => `Checked: ${L.week ?? '-'}% words first try (7d) · ${L.cold ?? '-'}% brand-new words · ${L.sent ?? '-'}% sentences · ${L.secs ?? '-'}s per word`)(learningStats()),
     `Practising: ${Object.entries(state.words).filter(([, x]) => x.miss > 0).sort((a, b) => b[1].miss - a[1].miss).slice(0, 10).map(([w, x]) => `${w}(${x.miss})`).join(', ')}`,
+    numSummaryLine(),
     mathSummaryLine(),
     `Books: ${Object.entries(state.books).map(([id, r]) => `${id} ×${r.reads}${r.grownup ? ' 👑' : ''}`).join(', ')}`, `Notes: ${state.notes || '-'}`].join('\n');
 }
@@ -839,7 +847,8 @@ const A = {
   },
   ans: (v, el) => {
     const it = cur(); if (it.done) return;
-    if (it.type === 'math') return mathAnswer(v, el); const r = el.getBoundingClientRect();
+    if (it.type === 'math') return mathAnswer(v, el);
+    if (it.type === 'num') return numAnswer(v, el); const r = el.getBoundingClientRect();
     if (v === it.answer) correct(it, r); else wrong(it, v);
   },
   tile: k => {

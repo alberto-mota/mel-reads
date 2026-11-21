@@ -68,6 +68,9 @@ function buildMath() {
   const t = today(); const m = mathState(); const items = [];
   if (mathAdvance()) save();
   items.push({ type: 'section', key: 'math' });
+  // Numbers after 10 come first: they're the base the bigger sums stand on (numbers.js).
+  const nums = buildNumbers(); nums.forEach(x => items.push(x));
+  const factCap = Math.max(3, 12 - nums.filter(x => x.type === 'num').length);
   const lvl = Math.min(m.lvl, MATH_LEVELS.length - 1);
   if (m.lvl < MATH_LEVELS.length && !m.intros.includes(MATH_LEVELS[lvl].id)) items.push({ type: 'mintro', lvl });
   const seen = Object.entries(m.facts);
@@ -86,7 +89,7 @@ function buildMath() {
   // Start with an easy win, then mix everything so the same kind of fact doesn't come twice in a row.
   const easy = list.filter(x => !x.cold).sort((p, q) => ((mathFact(q.f) || {}).b || 0) - ((mathFact(p.f) || {}).b || 0))[0];
   const rest = shuffle(list.filter(x => x !== easy));
-  (easy ? [easy, ...rest] : rest).forEach(x => items.push(x));
+  (easy ? [easy, ...rest] : rest).slice(0, factCap).forEach(x => items.push(x));
   return items;
 }
 
@@ -152,7 +155,7 @@ function mathEnd() {
   const t = today(); const m = mathState();
   const d = Object.assign({ n: 0, right: 0, total: 0, minutes: 0 }, m.days[t]);
   d.n++; d.right += S.right; d.total += S.total; d.minutes = Math.round((d.minutes + (Date.now() - S.started) / 60000) * 10) / 10;
-  m.days[t] = d; mathAdvance();
+  m.days[t] = d; mathAdvance(); numAdvance();
   state.history.push({ at: new Date().toISOString(), kind: 'math', right: S.right, total: S.total, grew: [], planted: [], book: null, minutes: Math.round((Date.now() - S.started) / 6000) / 10, mood: null });
   if (state.history.length > 400) state.history.shift();
   save(); fanfare();
