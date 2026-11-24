@@ -138,6 +138,38 @@ button{font-family:inherit;color:inherit;cursor:pointer;-webkit-appearance:none;
 .dots.counting .dgrp i:nth-child(2){animation-delay:.1s}.dots.counting .dgrp i:nth-child(3){animation-delay:.2s}.dots.counting .dgrp i:nth-child(4){animation-delay:.3s}.dots.counting .dgrp i:nth-child(5){animation-delay:.4s}.dots.counting .dgrp i:nth-child(6){animation-delay:.5s}.dots.counting .dgrp i:nth-child(7){animation-delay:.6s}.dots.counting .dgrp i:nth-child(8){animation-delay:.7s}.dots.counting .dgrp i:nth-child(9){animation-delay:.8s}
 .dots.counting .dgrp.b i{animation-delay:1s}
 .opt.num{font-family:'Fredoka',sans-serif;font-size:52px;font-weight:700;min-height:96px;color:var(--ink)}
+/* Numbers after 10 (numbers.js) */
+.num-card{gap:12px}
+.nfr{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
+.nf{display:grid;grid-template-columns:repeat(5,22px);gap:4px;padding:6px;border-radius:12px;background:#fff;border:2.5px solid #E7D6EF}
+.nf i{width:22px;height:22px;border-radius:50%;display:block;background:#F4EDF7;transition:transform .15s}
+.nf.ten i.on{background:#F0428F;box-shadow:0 3px 0 #A3175C}
+.nf.one i.on{background:#8B5CF6;box-shadow:0 3px 0 #5B2EC6}
+.nf i.counted{outline:3px solid var(--sun);outline-offset:1px;transform:scale(1.12)}
+.nf.mini{grid-template-columns:repeat(5,9px);gap:2px;padding:3px;border-width:1.5px;border-radius:6px} .nf.mini i{width:9px;height:9px;box-shadow:none!important}
+.nfr.counting i.on{animation:pop .5s cubic-bezier(.3,1.6,.5,1) both;animation-delay:calc(var(--k) * .7s)}
+.nfr.counting .nf.ten i.on{animation-delay:calc(var(--k) * .7s)}
+.nseq{display:flex;align-items:center;justify-content:center;gap:8px;font-family:'Fredoka',sans-serif;font-weight:700;font-size:64px;line-height:1;color:var(--ink)}
+.nseq i{font-style:normal;color:var(--muted);font-size:40px}
+.nseq .q{min-width:84px;text-align:center;border-radius:20px;background:#F6ECF3;padding:4px 10px;color:#B79AAE}
+.nseq .q.got{background:#E3F9EF;color:var(--okInk);animation:pop .45s cubic-bezier(.3,1.6,.5,1)}
+.nline{display:grid;grid-template-columns:repeat(11,minmax(0,1fr));gap:3px}
+.ncell{border:0;border-radius:10px;background:#F1EAFF;color:var(--lavInk);font-weight:700;font-size:15px;padding:10px 0}
+.ncell.hi{background:#22B07D;color:#fff}
+.nmore{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:100%}
+.nmore-pics{display:grid;grid-template-columns:1fr 1fr;gap:10px;width:100%} .nmore-pics .nf{grid-template-columns:repeat(5,12px);gap:2px;padding:3px} .nmore-pics .nf i{width:12px;height:12px}
+.nmore-pics .nfr{gap:4px}
+.nmake-target{font-family:'Fredoka',sans-serif;font-weight:700;font-size:64px;line-height:1;color:var(--pinkDark)}
+.njar{min-height:92px;width:100%;display:flex;align-items:center;justify-content:center;border-radius:18px;background:#FBF6FD;border:2.5px dashed #E7D6EF;padding:8px}
+.nval{font-weight:700;color:var(--muted);font-size:17px}
+.nbuild{display:grid;grid-template-columns:1fr 1fr 64px;gap:10px}
+.nbuild .opt{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-weight:700;font-size:20px;min-height:92px}
+.one-dot{width:26px;height:26px;border-radius:50%;background:#8B5CF6;box-shadow:0 3px 0 #5B2EC6}
+.nb-undo{font-size:28px!important}
+.nhint{opacity:.85}
+.eq.small.center{justify-content:center;text-align:center}
+.ngrid{display:grid;gap:3px;font-size:11px;text-align:center} .ngrid b{color:var(--muted);font-weight:700;align-self:center;text-align:left}
+.btn[disabled]{opacity:.5}
 .help-dots{margin-top:4px} .mini-dots{display:flex;gap:4px} .mini-dots i{width:10px;height:10px;border-radius:50%;background:var(--lavInk)}
 .combo{align-self:center;background:linear-gradient(180deg,#FFB35C,#F08A24);color:#fff;font-weight:700;font-size:18px;border-radius:999px;padding:6px 16px;box-shadow:0 4px 0 #B9600C;margin:-6px 0}
 .star-pop{font-size:40px;animation:pop .6s cubic-bezier(.3,1.6,.5,1)}
@@ -379,6 +411,7 @@ button.sticker{font:inherit;font-size:24px;padding:0;width:100%;color:inherit;cu
 <script src="sync.js"></script>
 <script src="math.js"></script>
 <script src="app.js"></script>
+<script src="numbers.js"></script>
 <script src="delight.js"></script>
 <script src="testkit.js"></script>
 <script>
