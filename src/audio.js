@@ -2,10 +2,36 @@
 /* Mel Reads — speech, sound effects, haptics, celebration effects */
 
 /* ---------- Sparkle's voice ----------
-   Uses the phone's built-in voice (instant, no downloads). On iPhone the silent switch must be off.
-   All lines of a turn are queued at once so there are no gaps. While speaking, body.talking moves her mouth. */
-let voice = null, unlocked = false, sayToken = 0, hintShown = 0;
+   Every fixed line and word has a recorded clip in voice/<name>/ (a neural voice, made by tools/voice).
+   A turn whose lines all have clips is played from them, scheduled back to back on the audio clock.
+   Anything else (a line added since the last recording) uses the phone's built-in voice instead.
+   On iPhone the clips play even with the silent switch on; the built-in voice needs it off.
+   While speaking, body.talking moves her mouth. */
+const VOICE_DIR = 'voice/heart/', CLIP_GAP = 0.28;
+let actx = null, voice = null, unlocked = false, sayToken = 0, hintShown = 0, clipIds = null, playing = [];
+const clipBufs = new Map();
 const hasTTS = 'speechSynthesis' in window;
+try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
+function audioCtx() {
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+  return actx;
+}
+fetch(VOICE_DIR + 'index.json').then(r => r.ok ? r.json() : null).then(j => {
+  if (!j) return; clipIds = new Set(j.clips);
+  preloadVoice(Object.values(LINES).flat());
+}).catch(() => {});
+const hasClip = t => !!clipIds && clipIds.has(clipId(t));
+function loadClip(t) {
+  const id = clipId(t);
+  if (!clipBufs.has(id)) {
+    const p = fetch(VOICE_DIR + id + '.mp3').then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then(b => new Promise((res, rej) => audioCtx().decodeAudioData(b, res, rej)));
+    p.catch(() => clipBufs.delete(id)); clipBufs.set(id, p);
+  }
+  return clipBufs.get(id);
+}
+/* Fetch clips ahead of time (the service worker keeps them for offline). */
+function preloadVoice(texts) { if (clipIds && audioCtx()) texts.filter(Boolean).filter(hasClip).forEach(t => loadClip(t).catch(() => {})); }
 function pickVoice() {
   if (!hasTTS) return;
   const vs = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang)); if (!vs.length) return;
@@ -16,20 +42,45 @@ if (hasTTS) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 function unlockAudio() {
   if (unlocked) return; unlocked = true;
   try { if (hasTTS) { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } } catch (e) {}
-  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.resume) actx.resume(); } catch (e) {}
+  try {
+    const c = audioCtx(); if (c.resume) c.resume();
+    const b = c.createBufferSource(); b.buffer = c.createBuffer(1, 1, 22050); b.connect(c.destination); b.start(0); // wakes iOS audio
+  } catch (e) {}
 }
 function setTalking(on) { document.body.classList.toggle('talking', !!on); }
 function stopVoice() {
   sayToken++;
+  playing.forEach(s => { try { s.onended = null; s.stop(); } catch (e) {} }); playing = [];
   try { if (hasTTS && (speechSynthesis.speaking || speechSynthesis.pending)) speechSynthesis.cancel(); } catch (e) {}
   setTalking(false);
 }
-/* say('word') or say(['Listen! Which word did I say?', 'ship']) — plays in order; a new say() interrupts. */
+/* say('word') or say(['Listen! Which word did I say?', 'ship']) — plays in order; a new say() interrupts.
+   Resolves true when it finished, false when it was interrupted. */
 function say(texts) {
   const list = (Array.isArray(texts) ? texts : [texts]).filter(Boolean).map(String);
   const busy = hasTTS && (speechSynthesis.speaking || speechSynthesis.pending);
   stopVoice(); const tok = sayToken;
   if (!list.length) return Promise.resolve(false);
+  if (audioCtx() && list.every(hasClip)) return sayClips(list, tok, busy);
+  if (clipIds) console.info('[voice] no clip for', list.filter(t => !hasClip(t)));
+  return sayTTS(list, tok, busy);
+}
+function sayClips(list, tok, busy) {
+  return Promise.all(list.map(loadClip)).then(bufs => {
+    if (tok !== sayToken) return false;
+    const c = audioCtx(); if (c.state === 'suspended' && c.resume) c.resume();
+    let t = c.currentTime + 0.05;
+    playing = bufs.map(b => { const s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(t); t += b.duration + CLIP_GAP; return s; });
+    setTalking(true);
+    setTimeout(() => { if (tok === sayToken && c.state !== 'running') soundHint(); }, 1500);
+    return new Promise(res => {
+      const done = () => { if (tok === sayToken) { playing = []; setTalking(false); } res(tok === sayToken); };
+      playing[playing.length - 1].onended = done;
+      setTimeout(done, (t - c.currentTime) * 1000 + 1500); // in case onended never fires (suspended context)
+    });
+  }, () => tok === sayToken ? sayTTS(list, tok, busy) : false);
+}
+function sayTTS(list, tok, busy) {
   if (!hasTTS) { soundHint(); return Promise.resolve(false); }
   return new Promise(res => {
     let left = list.length, started = false;
@@ -61,10 +112,9 @@ function soundHint() {
 }
 
 /* ---------- sound effects ---------- */
-let actx = null;
 function tone(freqs, dur = 0.12, type = 'sine') {
   try {
-    actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended' && actx.resume) actx.resume();
+    audioCtx(); if (actx.state === 'suspended' && actx.resume) actx.resume();
     freqs.forEach((f, k) => {
       const o = actx.createOscillator(), g = actx.createGain(); o.type = type; o.frequency.value = f;
       const t = actx.currentTime + k * dur; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.18, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.1);

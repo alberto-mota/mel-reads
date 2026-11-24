@@ -1,7 +1,10 @@
 'use strict';
-/* Mel Reads v0.3 — Sparkle's Word Garden.
-   Daily adventure: water (review) → plant (new words) → balloon game → story.
-   A word grows one stage per day it's read correctly: seed → sprout → bud → flower. Nothing ever wilts. */
+/* Mel Reads v0.7 — Read with Sparkle, plus Count with Sparkle (addition practice, see math.js).
+   One daily adventure (~5 min): warm up (build words) → read words for treats → read a sentence to Sparkle
+   → Sparkle eats → pick a present → bedtime, with a promise of a new trick tomorrow.
+   Mel mostly plays alone, so every step is something the app can check: no "I read it" buttons.
+   Treats come from right answers; a word only counts as known after 3 days of unaided right answers.
+   A word grows one stage per day it's read correctly (seed → sprout → bud → flower); only shown to grown-ups. */
 
 const KEY2 = 'melreads.v2', KEY1 = 'melreads.v1';
 const app = document.getElementById('app');
@@ -9,7 +12,7 @@ const app = document.getElementById('app');
 /* ================= DATES ================= */
 const pad = n => String(n).padStart(2, '0');
 function ds(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
-function today() { return ds(new Date()); }
+function today() { return ds(new Date(Date.now() + DAY_OFFSET * 86400000)); }
 function addDays(str, n) { const [y, m, d] = str.split('-').map(Number); const x = new Date(y, m - 1, d); x.setDate(x.getDate() + n); return ds(x); }
 function diffDays(a, b) { const p = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d).getTime(); }; return Math.round((p(b) - p(a)) / 86400000); }
 function fmtDate(str) { const [y, m, d] = str.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' }); }
@@ -67,6 +70,14 @@ function grow(w) {
   x.last = t; if (x.s < 3) { x.s++; return x.s; } return null;
 }
 function missWord(w) { const x = state.words[w]; if (x) x.miss = (x.miss || 0) + 1; }
+/* A wrong first answer on a reading check drops the word back a stage, so "known" stays honest. */
+function slipWord(w) { const x = state.words[w]; const t = today(); if (!x || x.slip === t) return; x.slip = t; if (x.s > 0) x.s--; }
+/* Every checked answer, for the grown-ups' "Is she learning?" numbers. */
+function logAnswer(it, ok) {
+  if (!state.log) state.log = [];
+  state.log.push({ d: today(), t: it.type, w: it.w || it.target || null, ok, ms: Date.now() - (it.t0 || Date.now()), cold: !!it.cold, help: !!it.helped, retry: !!it.retry });
+  if (state.log.length > 2000) state.log.splice(0, state.log.length - 2000);
+}
 function stepReady(i) { const ws = stepWords(i); if (!ws.length) return true; if (ws.some(w => !state.words[w])) return false; return ws.filter(w => state.words[w].s >= 2).length / ws.length >= 0.8; }
 function maybeAdvance() { let moved = false; while (state.stepIdx < STEPS.length && stepReady(state.stepIdx)) { state.stepIdx++; moved = true; } return moved; }
 const bookUnlocked = b => state.stepIdx >= b.after;
@@ -136,10 +147,13 @@ const ICON = {
   balloon: (c) => `<svg viewBox="0 0 80 110" aria-hidden="true"><path d="M40 4 C62 4 76 22 76 42 C76 64 56 80 40 84 C24 80 4 64 4 42 C4 22 18 4 40 4 Z" fill="${c}" stroke="#3B1E4A" stroke-width="3"/><path d="M36 84 L44 84 L40 90 Z" fill="${c}" stroke="#3B1E4A" stroke-width="2.5" stroke-linejoin="round"/><path d="M40 90 Q34 98 40 104 Q46 108 40 110" stroke="#3B1E4A" stroke-width="2" fill="none"/><ellipse cx="24" cy="24" rx="7" ry="11" fill="#fff" opacity=".45" transform="rotate(25 24 24)"/></svg>`,
 };
 const SECTION = {
+  warm: { title: 'Warm up', icon: '🔤', line: () => LINES.warm },
+  read: { title: 'Read for treats', icon: '🍓', line: () => LINES.read },
   water: { title: 'Water your garden', icon: '💧', line: () => LINES.water },
   plant: { title: 'Plant new words', icon: '🌱', line: () => LINES.plant },
   game: { title: 'Balloon game', icon: '🎈', line: () => LINES.game },
-  story: { title: 'Story time', icon: '📖', line: () => LINES.story },
+  story: { title: 'Read to Sparkle', icon: '📖', line: () => LINES.story },
+  math: { title: 'Count with Sparkle', icon: '🔢', line: () => MATH_LINES.section },
 };
 
 /* ================= SPARKLE ON SCREEN ================= */
@@ -162,9 +176,11 @@ function makeItem(w, type, extra = {}) {
   if (skill === 'sight' && type !== 'sight') type = 'sight';
   const it = Object.assign({ w, skill, pic: info.pic, type }, extra);
   if (type === 'pic' || type === 'teach') {
-    const others = shuffle(Object.values(WORD_INFO).filter(p => p.pic && p.pic !== info.pic && p.w !== w));
-    const same = others.filter(p => p.skill === skill); const picks = [];
-    [...same, ...others].forEach(p => { if (picks.length < 2 && !picks.includes(p.pic)) picks.push(p.pic); });
+    // Choices look alike (cat, can, cab), so spotting the first letter alone can't give the answer away.
+    const sim = p => (p.w[0] === w[0] ? 3 : 0) + [...new Set(p.w)].filter(ch => w.includes(ch)).length + (p.w.length === w.length ? 1 : 0);
+    const others = shuffle(Object.values(WORD_INFO).filter(p => p.pic && p.pic !== info.pic && p.w !== w)).sort((a, b) => sim(b) - sim(a));
+    const picks = [];
+    others.forEach(p => { if (picks.length < 2 && !picks.includes(p.pic)) picks.push(p.pic); });
     it.opts = shuffle([info.pic, ...picks]); it.answer = info.pic;
   } else if (type === 'hear') {
     let d = variants(w, skill);
@@ -186,15 +202,54 @@ function balloonItem(w) {
   d = [...d, ...plantedOthers, ...shuffle(WORDS[info.skill].map(x => x.w).filter(x => x !== w))].filter((x, i, a) => a.indexOf(x) === i && x !== w && isSafe(x)).slice(0, 2);
   return { type: 'balloon', w, skill: info.skill, opts: shuffle([w, ...d]), answer: w, colors: shuffle(['#FF8FB1', '#8CC8FF', '#FFD66B', '#B79CF0', '#8EE3B5']) };
 }
+/* On Mel's page Sparkle names one word and she has to find it, so the page is checked. */
+function pageTarget(line) {
+  const ws = [...new Set(line.split(' ').map(w => w.replace(/[^A-Za-z']/g, '')).filter(Boolean))];
+  const good = ws.filter(w => w.length >= 3 && WORD_INFO[w.toLowerCase()] && WORD_INFO[w.toLowerCase()].skill !== 'sight');
+  return (good.length ? shuffle(good) : ws.sort((a, b) => b.length - a.length))[0];
+}
 function pushBook(items, b) {
   items.push({ type: 'cover', book: b });
-  b.lines.forEach((l, i) => items.push({ type: 'page', book: b, i, text: l, who: i % 2 === 0 ? 'sparkle' : 'mel' }));
+  b.lines.forEach((l, i) => items.push(Object.assign({ type: 'page', book: b, i, text: l, who: i % 2 === 0 ? 'sparkle' : 'mel' }, i % 2 ? { target: pageTarget(l) } : {})));
   items.push({ type: 'bookq', book: b, opts: shuffle(b.opts), answer: b.opts[0] });
+}
+/* The daily adventure: warm up → read words for treats → read a sentence out loud to Sparkle. */
+function buildDaily() {
+  const t = today(); const items = [];
+  if (maybeAdvance()) save();
+  const st = STEPS[state.stepIdx];
+  if (st && !state.introsSeen.includes(st.id)) items.push({ type: 'intro', step: st });
+  const planted = Object.entries(state.words);
+  const due = planted.filter(([, x]) => x.s < 3 && x.last !== t).sort((a, b) => a[1].s - b[1].s || (b[1].miss || 0) - (a[1].miss || 0) || Math.random() - 0.5).map(e => e[0]);
+  const reviews = shuffle(planted.filter(([, x]) => x.s >= 3 && x.last !== t && (!x.last || diffDays(x.last, t) >= 5)).map(e => e[0]));
+  const stepWs = st ? stepWords(state.stepIdx) : [];
+  const newWords = stepWs.filter(w => !state.words[w]).slice(0, Math.max(0, Math.min(3, 14 - immatureCount())));
+  const decodable = w => (WORD_INFO[w] || {}).skill !== 'sight';
+  let warm = shuffle(stepWs.filter(decodable)).slice(0, 2);
+  if (!warm.length) warm = due.filter(decodable).slice(0, 2);
+  if (warm.length) { items.push({ type: 'section', key: 'warm' }); warm.forEach(w => items.push(makeItem(w, 'build'))); }
+  items.push({ type: 'section', key: 'read' });
+  newWords.forEach(w => items.push({ type: 'meet', w, pic: (WORD_INFO[w] || {}).pic }));
+  const readWs = shuffle([...new Set([...newWords, ...due, ...reviews.slice(0, 2)])].slice(0, 8));
+  const reads = readWs.map((w, k) => makeItem(w, k % 2 ? 'teach' : 'pic'));
+  // Cold reads: words she has never seen, made only of sounds she has learned. Reading those is the real test of decoding.
+  coldWords([...newWords, ...warm]).slice(0, 2).forEach(w => reads.splice(1 + rnd(reads.length), 0, makeItem(w, 'pic', { cold: true })));
+  reads.forEach(x => items.push(x));
+  const unit = (STEPS[Math.min(state.stepIdx, STEPS.length - 1)] || { unit: 1 }).unit;
+  items.push({ type: 'section', key: 'story' });
+  shuffle(SENTENCES[unit]).slice(0, 2).forEach(s => items.push({ type: 'sentence', text: s.t, q: s.q, opts: shuffle(s.opts), answer: s.opts[0] }));
+  return items;
+}
+/* Picture words she has never practised, using only sounds she has been taught (excluding today's new words). */
+function coldWords(skip = []) {
+  const skills = new Set(STEPS.slice(0, state.stepIdx + 1).map(st => st.skill));
+  return shuffle(Object.values(WORD_INFO).filter(x => x.pic && skills.has(x.skill) && x.skill !== 'sight' && !state.words[x.w] && !skip.includes(x.w)).map(x => x.w));
 }
 function buildSession(kind) {
   const t = today(); const items = [];
   if (kind.startsWith('book:')) { pushBook(items, BOOKS.find(x => x.id === kind.slice(5))); return items; }
-  if (kind === 'daily') { if (maybeAdvance()) save(); const st = STEPS[state.stepIdx]; if (st && !state.introsSeen.includes(st.id)) items.push({ type: 'intro', step: st }); }
+  if (kind === 'daily') return buildDaily();
+  if (kind === 'math') return buildMath();
   const planted = Object.entries(state.words);
   const due = planted.filter(([, x]) => x.s < 3 && x.last !== t).sort((a, b) => a[1].s - b[1].s || (b[1].miss || 0) - (a[1].miss || 0) || Math.random() - 0.5).map(e => e[0]);
   const reviews = shuffle(planted.filter(([, x]) => x.s >= 3 && x.last !== t && (!x.last || diffDays(x.last, t) >= 5)).map(e => e[0]));
@@ -227,12 +282,13 @@ function startSession(kind) {
   let items = [];
   try { items = buildSession(kind); } catch (e) { console.error('session build failed', e); }
   if (!items.length) { go('home'); return; }
-  S = { view: 'session', kind, items, i: 0, started: Date.now(), grew: [], planted: [], gems: 0, right: 0, total: 0, bookDone: null, bonus: day(today()).met };
+  S = { view: 'session', kind, items, i: 0, started: Date.now(), grew: [], planted: [], gems: 0, right: 0, total: 0, treats: 0, combo: 0, bookDone: null, bonus: day(today()).met };
+  preloadVoice(items.flatMap(it => [...itemPrompt(it), it.w]));
   enterItem(); render(); afterEnter();
 }
 function cur() { return S.items[S.i]; }
 function enterItem() {
-  const it = cur(); Object.assign(it, { done: false, first: true, msg: null, wrong: [], built: [], read: false, tries: 0, popped: null });
+  const it = cur(); Object.assign(it, { done: false, first: true, msg: null, wrong: [], built: [], read: false, tries: 0, popped: null, helped: false, t0: Date.now() });
   S.bubble = bubbleFor(it);
   if (it.tiles) it.tiles.forEach(t => t.used = false);
 }
@@ -240,46 +296,70 @@ function itemPrompt(it) {
   switch (it.type) {
     case 'section': return [SECTION[it.key].line()];
     case 'intro': return [LINES.newSound, it.step.intro];
-    case 'meet': return [LINES.meet, it.w, LINES.meetSay];
+    case 'meet': return [LINES.meet, it.w, LINES.meetSay, it.w];
     case 'pic': return [LINES.pic];
     case 'teach': return [LINES.teach];
     case 'hear': return [LINES.hear, it.w];
     case 'sight': return [LINES.sight, it.w];
     case 'build': return [LINES.build, it.w];
     case 'balloon': return [LINES.balloon, it.w];
-    case 'sentence': return [LINES.sentence, it.text, it.q];
+    case 'sentence': return [LINES.sentence];
     case 'cover': return [it.book.title];
-    case 'page': return it.who === 'sparkle' ? [LINES.myTurn, it.text] : [LINES.yourTurn];
+    case 'page': return it.who === 'sparkle' ? [LINES.myTurn, it.text] : [LINES.findWord, it.target];
     case 'bookq': return [it.book.q];
+    case 'math': return mathAsk(it);
+    case 'num': return numAsk(it);
+    case 'nintro': return numIntroLines(it);
+    case 'mintro': { const L = MATH_LEVELS[it.lvl]; return [MATH_LINES.newKind, L.intro, `${L.ex[0]} ${MATH_LINES.plus} ${L.ex[1]} is ${L.ex[0] + L.ex[1]}.`]; }
   }
   return [];
 }
 function bubbleFor(it) {
-  return { section: SECTION[it.key] && SECTION[it.key].line(), intro: it.step && it.step.intro, meet: "Here's a new word for your garden!", pic: 'Can you find the picture for this word?', teach: 'What does this say? Can you read it to me?', hear: 'Listen! Which word did I say?', sight: 'Find the word I say!', build: "Let's build the word! Listen.", balloon: 'Pop the balloon that says…', sentence: 'Read this with me!', cover: it.book && it.book.title, page: it.who === 'sparkle' ? 'My turn! Listen.' : 'Your turn! Read this page to me.', bookq: it.book && it.book.q }[it.type] || '';
+  if (it.type === 'math') return `${it.a} + ${it.b} = ?`;
+  if (it.type === 'mintro') return MATH_LINES.newKind;
+  if (it.type === 'num') return numBubble(it);
+  if (it.type === 'nintro') return NUM_LINES.newKind;
+  return { section: SECTION[it.key] && SECTION[it.key].line(), intro: it.step && it.step.intro, meet: "Here's a new word!", pic: 'Can you find the picture for this word?', teach: 'What does this say? Can you read it to me?', hear: 'Listen! Which word did I say?', sight: 'Find the word I say!', build: "Let's build the word! Listen.", balloon: 'Pop the balloon that says…', sentence: 'Read it by yourself. Then answer!', cover: it.book && it.book.title, page: it.who === 'sparkle' ? 'My turn! Listen.' : 'Your turn! Read the page, then tap the word I say.', bookq: it.book && it.book.q }[it.type] || '';
 }
 function afterEnter() {
-  if (S.view === 'session') { const it = cur(); setTimeout(() => { if (S.view === 'session' && cur() === it) sparkleSays(itemPrompt(it)); }, 250); }
-  else if (S.view === 'home' && unlocked && !greeted) { greeted = true; const l = homeLine(); sparkleSays([l]); }
+  // Math answer times start when Sparkle finishes asking, so a slow voice doesn't count against her.
+  if (S.view === 'session') { const it = cur(); setTimeout(() => { if (S.view === 'session' && cur() === it) { const p = sparkleSays(itemPrompt(it)); if (it.type === 'math' || it.type === 'num') p.then(() => { if (S.view === 'session' && cur() === it && !it.done && it.first) it.t0 = Date.now(); }); } }, 250); }
+  else if (S.view === 'home' && unlocked && !greeted) { greeted = true; sparkleSays(spLine || [homeLine()]); }
+  else if (S.view === 'feed') sparkleSays([S.kind === 'math' ? MATH_LINES.feed : LINES.feed]);
+  else if (S.view === 'present') sparkleSays([LINES.present]);
+  else if (S.view === 'bedtime') sparkleSays([LINES.bedtime, TRICKS[(state.promise || { trick: 0 }).trick % TRICKS.length].promise]);
   else if (S.view === 'garden' && unlocked) sparkleSays([LINES.garden]);
   else if (S.view === 'books' && unlocked) sparkleSays([LINES.shelf]);
   else if (S.view === 'summary') sparkleSays(S.unlocked && S.unlocked.length ? [LINES.grew, `You earned the ${S.unlocked[0].name} for me!`] : [LINES.grew]);
   else if (S.view === 'goal') sparkleSays([LINES.bye]);
 }
+const READS = ['pic', 'teach', 'hear', 'sight'];
+const CHECKS = [...READS, 'sentence', 'page', 'bookq', 'build'];
 function correct(it, el) {
   it.done = true; chime(); haptic('success');
-  if (it.first) S.right++; S.total++;
-  if (it.w && state.words[it.w]) {
-    if (it.first) { const ns = grow(it.w); if (ns) { S.grew.push({ w: it.w, s: ns }); earn(2); } earn(1); }
-    else missWord(it.w);
+  if (it.first) { S.right++; S.treats = (S.treats || 0) + 1; } S.total++;
+  if (CHECKS.includes(it.type) && it.first) logAnswer(it, true); // misses are logged in wrong()
+  // A cold read she gets right goes straight in as a word she can read; a miss goes in for practice.
+  if (it.cold && it.first && !state.words[it.w]) state.words[it.w] = { s: 1, last: today(), ok: 1, miss: 0, at: new Date().toISOString() };
+  else if (it.w && state.words[it.w]) {
+    // Only reading print, unaided, on the first try grows a word. Building (spelling), balloons and retries are practice.
+    if (it.first && !it.retry) { const ns = READS.includes(it.type) ? grow(it.w) : null; if (ns) { S.grew.push({ w: it.w, s: ns }); earn(2); } earn(1); }
+    else if (!it.first) missWord(it.w);
   }
   if (it.type === 'bookq') finishBook(it.book);
   it.msg = 'ok';
-  const lines = it.type === 'teach' ? [LINES.teachThanks, it.w] : it.type === 'bookq' ? [LINES.bookDone] : [praise()];
+  const lines = it.type === 'teach' ? [LINES.teachThanks, it.w] : it.type === 'bookq' ? [LINES.bookDone] : it.type === 'page' ? [LINES.pageThanks, it.text] : [praise()];
   S.bubble = it.type === 'teach' ? 'Oh! Thank you for teaching me!' : it.type === 'bookq' ? 'You read the whole book!' : lines[0];
   save(); render(); if (el) burst(el, it.type === 'balloon' ? 22 : 14);
   sparkleSays(lines);
 }
 function wrong(it, val) {
+  if (it.first) {
+    if (CHECKS.includes(it.type) && it.type !== 'build') logAnswer(it, false);
+    if (it.cold && !state.words[it.w]) { state.words[it.w] = { s: 0, last: null, ok: 0, miss: 0, at: new Date().toISOString() }; S.planted.push(it.w); }
+    if (READS.includes(it.type) && !it.retry) { slipWord(it.w); requeue(it); }
+    if (it.type === 'sentence' && !it.retry) requeue(it);
+  }
   it.first = false; it.tries++; if (val !== undefined && !it.wrong.includes(val)) it.wrong.push(val);
   boop(); haptic('error'); it.msg = 'bad'; S.bubble = "Hmm, let's look again together.";
   render();
@@ -287,6 +367,13 @@ function wrong(it, val) {
   if (it.type === 'pic' || it.type === 'teach') lines.push(LINES.soundOut, it.w);
   else if (it.type !== 'sentence' && it.type !== 'bookq' && it.w) lines.push(it.w);
   sparkleSays(lines);
+}
+/* A missed check comes back near the end of the session, after Sparkle has shown the answer. */
+function requeue(it) {
+  const copy = it.type === 'sentence' ? { type: 'sentence', text: it.text, q: it.q, opts: shuffle(it.opts), answer: it.answer } : makeItem(it.w, it.type);
+  copy.retry = true; copy.cold = false;
+  let at = S.items.length; while (at > S.i + 1 && ['section', 'sentence'].includes(S.items[at - 1].type) && it.type !== 'sentence') at--;
+  S.items.splice(Math.max(at, S.i + 2), 0, copy);
 }
 function finishBook(b) {
   const rec = state.books[b.id] || { reads: 0, grownup: false, first: null };
@@ -299,6 +386,7 @@ function nextItem() {
   else endSession();
 }
 function endSession() {
+  if (S.kind === 'math') return mathEnd();
   const t = today(); const d = Object.assign({ sessions: 0, met: false, minutes: 0 }, state.days[t]);
   const wasMet = d.met; d.sessions++; d.minutes = Math.round((d.minutes + (Date.now() - S.started) / 60000) * 10) / 10;
   let newShield = false;
@@ -309,18 +397,19 @@ function endSession() {
   } else if (!counts) d.sessions--; // games & rereads don't count as the daily adventure
   state.days[t] = d;
   if (counts) earn(5);
+  if (S.kind === 'daily' && !wasMet && d.met) state.promise = { day: t, trick: (Object.values(state.days).filter(x => x.met).length - 1) % TRICKS.length };
   state.history.push({ at: new Date().toISOString(), kind: S.kind, right: S.right, total: S.total, grew: S.grew.map(g => g.w + ':' + g.s), planted: S.planted.slice(), book: S.bookDone ? S.bookDone.id : null, minutes: Math.round((Date.now() - S.started) / 6000) / 10, mood: null });
   if (state.history.length > 400) state.history.shift();
   const unlocked = checkRewards(); const setsDone = checkSets();
   save(); fanfare();
-  go('summary', { unlocked, setsDone, grew: S.grew, planted: S.planted, gemsWon: S.gems, bookDone: S.bookDone, justMet: !wasMet && d.met, newShield, kind: S.kind });
+  go('feed', { unlocked, setsDone, grew: S.grew, planted: S.planted, gemsWon: S.gems, treats: S.treats, bookDone: S.bookDone, justMet: !wasMet && d.met, newShield, kind: S.kind });
 }
 
 /* ================= VIEWS ================= */
 let lastKey = '';
 function render() {
   const v = S.view;
-  const html = { home: vHome, session: vSession, summary: vSummary, goal: vGoal, garden: vGarden, books: vBooks, wardrobe: vWardrobe, parent: vParent, placement: vPlacement, welcome: vWelcome, migrate: vMigrate, grownup: vGrownup }[v];
+  const html = { feed: vFeed, present: vPresent, bedtime: vBedtime, home: vHome, session: vSession, summary: vSummary, goal: vGoal, garden: vGarden, books: vBooks, wardrobe: vWardrobe, parent: vParent, placement: vPlacement, welcome: vWelcome, migrate: vMigrate, grownup: vGrownup }[v];
   app.innerHTML = (v === 'home' && !state.placed ? vWelcome : html || vHome)();
   const ws = v === 'wardrobe' ? wornSet(curOutfit()) : wornSet(); document.body.dataset.theme = ws ? ws.id : '';
   const key = v + (v === 'session' ? ':' + S.i : v === 'placement' && S.p ? ':' + S.p.i : v === 'grownup' ? ':' + S.page : '');
@@ -328,18 +417,17 @@ function render() {
   lastKey = key;
   if (S.view === 'summary' && !S.fx) { S.fx = true; countUp(document.querySelector('[data-count]'), S.gemsWon); confetti(50); haptic('big'); }
   if (S.view === 'goal' && !S.fx) { S.fx = true; confetti(90); }
+  if (S.view === 'feed' && !S.fx) { S.fx = true; const m = document.querySelector('[data-meter]'); setTimeout(() => { if (m) m.style.width = m.dataset.meter + '%'; }, 120); confetti(50); haptic('big'); }
 }
 function topBar(extra = '') {
   return `<div class="row topbar">
-    <div class="pill" aria-label="Rainbow streak ${streak()} days">${ICON.rainbow()}<span style="color:var(--pinkDark)">${streak()}</span></div>
-    <div class="pill" aria-label="${gems()} gems">${ICON.star()}${gems()}</div>
     <div class="grow"></div>${extra}
     <button class="icon-btn gear" data-hold="parent" aria-label="Grown-ups: press and hold">${ICON.gear}<span class="hold-fill"></span></button>
   </div>`;
 }
 function nav(on) {
   const b = (id, label, icon) => `<button class="${on === id ? 'on' : ''}" data-act="nav" data-arg="${id}"><span class="nav-ic">${icon}</span>${label}${id === 'wardrobe' && state.newItems.length ? '<i class="nav-dot"></i>' : ''}</button>`;
-  return `<nav class="nav four">${b('home', 'Today', '🏠')}${b('garden', 'Garden', '🌷')}${b('books', 'Books', '📚')}${b('wardrobe', 'Sparkle', '🦄')}</nav>`;
+  return `<nav class="nav">${b('home', 'Today', '🏠')}${b('books', 'Books', '📚')}${b('wardrobe', 'Sparkle', '🦄')}</nav>`;
 }
 function homeLine() {
   const t = today(); const d = day(t);
@@ -349,58 +437,96 @@ function homeLine() {
 }
 function isLate() { const [hh, mm] = state.settings.reminder.split(':').map(Number); const n = new Date(); return n.getHours() * 60 + n.getMinutes() >= hh * 60 + mm; }
 
+const STICKERS = ['🦄', '⭐', '🌈', '🍓', '💖', '🌙', '🎀'];
+function stickerWeek() {
+  const t = today(); const [y, m, d] = t.split('-').map(Number); const mon = addDays(t, -((new Date(y, m - 1, d).getDay() + 6) % 7));
+  return `<div class="stickers">${[...Array(7)].map((_, k) => { const dd = addDays(mon, k); const on = day(dd).met; return `<div><button class="sticker ${on ? 'on' : ''} ${dd === t ? 'today' : ''}" data-act="sticker" data-arg="${k}" aria-label="${'MTWTFSS'[k]} sticker">${on ? STICKERS[k] : ''}</button><div class="tiny">${'MTWTFSS'[k]}</div></div>`; }).join('')}</div>`;
+}
 function vHome() {
-  const t = today(); const d = day(t); const met = d.met; const late = isLate() && !met;
-  const c = stageCounts(); const line = homeLine();
-  spLine = [line];
-  const recent = Object.entries(state.words).sort((a, b) => b[1].s - a[1].s).slice(0, 7);
-  const steps4 = ['water', 'plant', 'game', 'story'].map(k => `<div class="step4 ${met ? 'done' : ''}"><span>${SECTION[k].icon}</span><b>${SECTION[k].title.split(' ')[0]}</b></div>`).join('');
-  const canMore = state.stepIdx < STEPS.length && immatureCount() <= 6;
+  const t = today(); const met = day(t).met; const night = isLate(); const p = state.promise;
+  let line, mood, css = 'float-sp';
+  if (met) { line = LINES.asleep; mood = 'sleepy'; }
+  else if (p && p.day !== t) { const tr = TRICKS[p.trick % TRICKS.length]; line = tr.did; mood = 'cheer'; css = tr.css; }
+  else { line = night ? LINES.hungryNight : LINES.hungry[new Date().getDate() % LINES.hungry.length]; mood = night ? 'sleepy' : 'happy'; }
+  spLine = [line.replace('Mel', state.name)];
   const hasGame = Object.values(state.words).some(x => x.s >= 1);
   const book = BOOKS.filter(bookUnlocked).length;
-  return `<section class="screen ${late ? 'dusk' : ''}">
+  return `<section class="screen ${night || met ? 'night' : ''}">
     ${topBar()}
     <div class="hero-sp">
-      ${sparkle(230, late ? 'sleepy' : met ? 'cheer' : 'happy', 'float-sp')}
-      <div class="say-bubble big">${esc(line.replace('Mel', state.name))}</div>
+      ${sparkle(240, mood, css)}
+      <div class="say-bubble big">${esc(spLine[0])}</div>
       ${wornSet() ? `<div class="sp-title">${wornSet().icon} ${wornSet().title}</div>` : ''}
     </div>
-    ${!met ? `<div class="card adventure">
-        <div class="cap">Today's adventure · about 10 min</div>
-        <div class="steps4">${steps4}</div>
-        <button class="btn glow" data-act="start" data-arg="daily">Start! ✨</button>
-      </div>` : `<div class="card adventure">
-        <div class="row"><div class="badge" style="background:linear-gradient(145deg,#3FD39B,#4DA8FF);box-shadow:0 5px 0 #1E8F7A">${ICON.check(26)}</div><div class="grow"><div class="h2">Adventure done!</div><div class="muted small">Your rainbow is shining. Want to play more?</div></div></div>
-        <div class="more-grid">
+    ${!met ? `<button class="btn glow" style="min-height:84px;font-size:28px" data-act="start" data-arg="daily">Let's read! ✨</button>`
+      : `<div class="more-grid">
+          ${book ? `<button class="btn soft" data-act="nav" data-arg="books">📚 Books</button>` : ''}
           ${hasGame ? `<button class="btn soft" data-act="start" data-arg="game">🎈 Balloons</button>` : ''}
-          ${book ? `<button class="btn soft" data-act="nav" data-arg="books">📚 Read a book</button>` : ''}
-          ${canMore ? `<button class="btn soft" data-act="start" data-arg="more">🌱 Plant more</button>` : ''}
           <button class="btn soft" data-act="nav" data-arg="wardrobe">🦄 Dress up</button>
-        </div></div>`}
-    <button class="chip garden-chip" data-act="nav" data-arg="garden">
-      <div class="mini-garden">${recent.length ? recent.map(([w, x]) => flowerSVG(x.s, hueFor(w), 40)).join('') : flowerSVG(0, '#FF8FB1', 40)}</div>
-      <div class="grow"><div style="font-size:17px;font-weight:700">${c[3]} flower${c[3] === 1 ? '' : 's'} · ${c[1] + c[2]} growing</div><div class="small muted">Tap to visit your word garden</div></div>
-    </button>
-    ${state.shields ? `<div class="row small muted" style="justify-content:center">${ICON.shield(18)} ${state.shields} Unicorn Shield${state.shields > 1 ? 's' : ''} saved</div>` : ''}
+        </div>`}
+    <button class="btn sky ${met && !mathDoneToday() ? 'glow-sky' : ''}" data-act="start" data-arg="math">${mathDoneToday() ? 'Count again 🔢 ✓' : "Let's count! 🔢"}</button>
+    ${stickerWeek()}
     ${nav('home')}
   </section>`;
 }
 
-function graphemeRow(w) { return `<div class="target">${graphemes(w).map(g => `<div class="g ${g.length > 1 ? 'di' : ''}"><b>${esc(g)}</b><i></i></div>`).join('')}</div>`; }
+/* ---------- end of the adventure: feed Sparkle → present → bedtime ---------- */
+function vFeed() {
+  const n = Math.max(1, S.treats || 0); const math = S.kind === 'math'; spLine = [math ? MATH_LINES.feed : LINES.feed];
+  const daily = S.kind === 'daily';
+  const next = !daily ? `<button class="btn" data-act="nav" data-arg="home">Done</button>`
+    : WARDROBE.some(w => !state.owned.includes(w.id)) ? `<button class="btn" data-act="toPresent">Open your present 🎁</button>`
+    : `<button class="btn" data-act="toBed">Time for bed 🌙</button>`;
+  return `<section class="screen center" style="gap:16px">
+    ${sparkle(190, 'cheer', 'hop-sp')}
+    <h1 class="h1">Yum yum!</h1>
+    <div class="muted" style="font-size:19px">${math ? `You caught ${n} star${n === 1 ? '' : 's'} for Sparkle!` : `You gave Sparkle ${n} treat${n === 1 ? '' : 's'} by reading!`}</div>
+    <div class="bowl">${[...Array(n)].map((_, k) => `<span data-act="berry" style="animation-delay:${k * 0.12}s">${math ? '⭐' : '🍓'}</span>`).join('')}</div>
+    <div class="cap">Sparkle's happy meter</div>
+    <div class="meter"><i data-meter="${Math.min(100, 40 + n * 6)}"></i></div>
+    <div class="spacer"></div>
+    ${next}
+  </section>`;
+}
+function vPresent() {
+  spLine = [LINES.present];
+  return `<section class="screen center" style="gap:16px">
+    ${sparkle(170, 'wow')}
+    <h1 class="h1">Pick a present for Sparkle!</h1>
+    <div class="presents">${S.choices.map(w => `<button class="present" data-act="pickPresent" data-arg="${w.id}">${miniSp({ [w.slot]: w.id }, SLOT_VIEW[w.slot])}${esc(w.name)}</button>`).join('')}</div>
+  </section>`;
+}
+function vBedtime() {
+  const tr = TRICKS[(state.promise || { trick: 0 }).trick % TRICKS.length];
+  spLine = [LINES.bedtime, tr.promise];
+  return `<section class="screen night center" style="gap:16px;justify-content:center">
+    ${sparkle(210, 'sleepy', 'float-sp')}
+    ${S.gift ? `<div class="muted">Sparkle is wearing her new ${esc(S.gift.name)}!</div>` : ''}
+    <div class="say-bubble big">${esc(LINES.bedtime.replace('Mel', state.name))} ${esc(tr.promise)}</div>
+    <div class="cap" style="color:#E3D4FF">This week's stickers</div>
+    ${stickerWeek()}
+    <div class="spacer"></div>
+    <button class="btn" data-act="nav" data-arg="home">Good night, Sparkle 🌙</button>
+  </section>`;
+}
+
+function graphemeRow(w) { const h = HEART[String(w).toLowerCase()] || []; return `<div class="target">${graphemes(w).map((g, k) => `<div class="g ${g.length > 1 ? 'di' : ''} ${h.includes(k) ? 'heart-g' : ''}"><b>${esc(g)}</b><i></i></div>`).join('')}</div>`; }
 function sessionTop() {
   const n = S.items.length; const pct = Math.round(((S.i + (cur().done ? 1 : 0)) / n) * 100);
-  return `<div class="row"><button class="icon-btn" data-act="quit" aria-label="Stop">${ICON.close}</button><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+  return `<div class="row"><button class="icon-btn" data-act="quit" aria-label="Stop">${ICON.close}</button><div class="bar"><i style="width:${pct}%"></i></div><div class="treats" data-act="treatTap" aria-label="${S.treats || 0} treats">${S.kind === 'math' ? '⭐' : '🍓'} ${S.treats || 0}</div></div>`;
 }
 function vSession() {
   const it = cur();
   const mood = it.msg === 'ok' ? 'cheer' : it.msg === 'bad' ? 'think' : it.type === 'teach' ? 'think' : it.type === 'intro' ? 'wow' : 'happy';
-  const optClass = v => it.done && v === it.answer ? 'right' : it.wrong.includes(v) ? 'wrong' : '';
+  // Wrong answers escalate help, not fun: after two misses the right answer glows.
+  const nudge = !it.done && it.tries >= 2;
+  const optClass = v => it.done && v === it.answer ? 'right' : it.wrong.includes(v) ? 'wrong' : nudge && v === it.answer ? 'nudge' : '';
   let body = '', foot = '';
   const sp = spRow(mood, S.bubble || '');
   switch (it.type) {
     case 'section': {
       const sec = SECTION[it.key];
-      body = `<div class="stage">${sparkle(210, 'cheer', 'hop-sp')}<div class="stage-ic">${sec.icon}</div><div class="h1 center-t">${sec.title}</div></div>`;
+      body = `<div class="stage">${sparkle(210, 'cheer', 'hop-sp')}<div class="stage-ic" data-act="toy">${sec.icon}</div><div class="h1 center-t">${sec.title}</div></div>`;
       foot = `<button class="btn" data-act="next">Let's go!</button>`; break;
     }
     case 'intro': {
@@ -409,33 +535,42 @@ function vSession() {
       foot = `<button class="btn" data-act="introDone">Got it!</button>`; break;
     }
     case 'meet':
-      body = `${sp}<div class="card meet" style="align-items:center">${it.pic ? `<div class="big-pic">${it.pic}</div>` : ''}${graphemeRow(it.w)}${it.read ? `<div class="planted pop">${flowerSVG(0, hueFor(it.w), 70)}<b>Planted!</b></div>` : ''}</div>`;
-      foot = it.read ? `<button class="btn ok" data-act="next">Next</button>` : `<button class="btn" data-act="meetSaid">I said it!</button>`; break;
+      body = `${sp}<div class="card meet" style="align-items:center">${it.pic ? `<div class="big-pic" data-act="toy">${it.pic}</div>` : ''}${graphemeRow(it.w)}</div>`;
+      foot = `<button class="btn" data-act="meetDone">Next</button>`; break;
     case 'pic': case 'teach':
       body = `${sp}${it.type === 'teach' ? `<div class="cap center-t">Teach Sparkle!</div>` : ''}<div class="card" style="align-items:center">${graphemeRow(it.w)}</div>
         <div class="opts">${it.opts.map(o => `<button class="opt ${optClass(o)}" data-act="ans" data-arg="${o}" aria-label="picture">${o}</button>`).join('')}</div>`; break;
     case 'hear': case 'sight':
       body = `${sp}<div class="opts ${it.opts.length === 4 ? 'four' : ''}" style="margin-top:8px">${it.opts.map(o => `<button class="opt word ${optClass(o)}" data-act="ans" data-arg="${esc(o)}">${esc(o)}</button>`).join('')}</div><div class="tiny muted center-t">Tap Sparkle to hear it again</div>`; break;
     case 'build':
-      body = `${sp}${it.pic ? `<div class="big-pic" style="text-align:center">${it.pic}</div>` : ''}
+      body = `${sp}${it.pic ? `<div class="big-pic" data-act="toy" style="text-align:center">${it.pic}</div>` : ''}
         <div class="slots">${it.parts.map((p, k) => `<div class="slot ${k < it.built.length ? 'full' : ''}">${k < it.built.length ? esc(it.built[k]) : ''}</div>`).join('')}</div>
-        <div class="tiles">${it.tiles.map(t => `<button class="tile ${t.used ? 'used' : ''} ${S.shakeK === t.k ? 'shake' : ''}" data-act="tile" data-arg="${t.k}">${esc(t.t)}</button>`).join('')}</div>`; break;
+        <div class="tiles">${it.tiles.map(t => `<button class="tile ${t.used ? 'used' : ''} ${S.shakeK === t.k ? 'shake' : ''} ${nudge && !t.used && t.t === it.parts[it.built.length] && t.k === it.tiles.find(x => !x.used && x.t === it.parts[it.built.length]).k ? 'nudge' : ''}" data-act="tile" data-arg="${t.k}">${esc(t.t)}</button>`).join('')}</div>`; break;
     case 'balloon':
       body = `${sp}<div class="balloons">${it.opts.map((o, k) => `<button class="balloon b${k} ${it.done && o === it.answer ? 'popped' : ''} ${it.wrong.includes(o) ? 'wobble' : ''}" data-act="ans" data-arg="${esc(o)}" aria-label="${esc(o)}">${ICON.balloon(it.colors[k])}<span class="reading">${esc(o)}</span></button>`).join('')}</div><div class="tiny muted center-t">Tap Sparkle to hear it again</div>`; break;
     case 'sentence':
-      body = `${sp}<div class="card"><div class="sentence" style="font-size:30px">${it.text.split(' ').map(w => `<span data-act="sayword" data-arg="${esc(w.replace(/[^A-Za-z']/g, ''))}">${esc(w)}</span>`).join('')}</div></div>
+      body = `${sp}<div class="card"><div class="sentence" style="font-size:30px">${it.text.split(' ').map(w => `<span data-act="helpword" data-arg="${esc(w.replace(/[^A-Za-z']/g, ''))}">${esc(w)}</span>`).join('')}</div></div>
         <div class="h2 center-t">${esc(it.q)}</div><div class="opts">${it.opts.map(o => `<button class="opt ${optClass(o)}" data-act="ans" data-arg="${o}" aria-label="picture">${o}</button>`).join('')}</div>`; break;
     case 'cover':
       body = `<div class="stage"><div class="book-cover big" style="background:${it.book.color}"><div class="cover-ic">${it.book.cover}</div><div class="cover-title">${esc(it.book.title)}</div></div>${sparkle(130, 'happy')}</div>`;
       foot = `<button class="btn" data-act="next">Open the book 📖</button>`; break;
     case 'page':
-      body = `${sp}<div class="card page" style="border-top:10px solid ${it.book.color}"><div class="cap">${esc(it.book.title)} · page ${it.i + 1}</div><div class="sentence">${it.text.split(' ').map(w => `<span data-act="sayword" data-arg="${esc(w.replace(/[^A-Za-z']/g, ''))}">${esc(w)}</span>`).join('')}</div><div class="page-ic">${it.book.cover}</div></div>
-        <div class="tiny muted center-t">${it.who === 'mel' ? 'Read it out loud to Sparkle. Tap a word if it’s tricky.' : 'Follow along while Sparkle reads.'}</div>`;
-      foot = it.who === 'mel' && !it.read ? `<button class="btn" data-act="readPage">I read it! 🌟</button>` : `<button class="btn ok" data-act="next">Next page</button>`; break;
+    {
+      const mel = it.who === 'mel';
+      const word = w => { const clean = w.replace(/[^A-Za-z']/g, ''); const cls = mel && it.done && clean === it.target ? 'found' : mel && it.wrong.includes(clean) ? 'nope' : mel && nudge && clean === it.target ? 'nudge' : '';
+        return `<span class="${cls}" data-act="${mel ? 'pageWord' : 'sayword'}" data-arg="${esc(clean)}">${esc(w)}</span>`; };
+      body = `${sp}<div class="card page" style="border-top:10px solid ${it.book.color}"><div class="cap">${esc(it.book.title)} · page ${it.i + 1}</div><div class="sentence">${it.text.split(' ').map(word).join('')}</div><div class="page-ic" data-act="toy">${it.book.cover}</div></div>
+        <div class="tiny muted center-t">${mel ? 'Read the page. Then tap the word Sparkle says. Tap Sparkle to hear it again.' : 'Follow along while Sparkle reads.'}</div>`;
+      foot = mel && !it.done ? '' : `<button class="btn ok" data-act="next">Next page</button>`; break;
+    }
+    case 'math': ({ body, foot } = vMathItem(it, sp)); break;
+    case 'mintro': ({ body, foot } = vMathIntro(it, sp)); break;
+    case 'num': ({ body, foot } = vNumItem(it, sp)); break;
+    case 'nintro': ({ body, foot } = vNumIntro(it, sp)); break;
     case 'bookq':
       body = `${sp}<div class="h2 center-t">${esc(it.book.q)}</div><div class="opts">${it.opts.map(o => `<button class="opt ${optClass(o)}" data-act="ans" data-arg="${o}" aria-label="picture">${o}</button>`).join('')}</div>`; break;
   }
-  if (it.msg === 'ok' && !['section', 'intro', 'meet', 'cover', 'page'].includes(it.type)) foot = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${sparkle(64, 'cheer', 'mini')}<div class="grow">${esc(S.bubble || 'Sparkly!')}${it.w && it.type !== 'teach' ? `<div class="reading" style="font-size:24px">"${esc(it.w)}"</div>` : ''}</div></div><button class="btn ok" data-act="next">${S.i === S.items.length - 1 ? 'Finish' : 'Next'}</button></div>`;
+  if (it.msg === 'ok' && !['section', 'intro', 'meet', 'cover', 'page', 'math', 'num'].includes(it.type)) foot = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${sparkle(64, 'cheer', 'mini')}<div class="grow">${esc(S.bubble || 'Sparkly!')}${it.w && it.type !== 'teach' ? `<div class="reading" style="font-size:24px">"${esc(it.w)}"</div>` : ''}</div></div><button class="btn ok" data-act="next">${S.i === S.items.length - 1 ? 'Finish' : 'Next'}</button></div>`;
   else if (it.msg === 'bad' && (it.type === 'pic' || it.type === 'teach' || it.type === 'build')) foot = `<div class="hint-row reading">${graphemes(it.w).join(' – ')}</div>`;
   return `<section class="screen">${sessionTop()}${body}<div class="spacer"></div>${foot}</section>`;
 }
@@ -487,7 +622,7 @@ function vBooks() {
     <div class="shelf">${BOOKS.map(b => {
       const r = state.books[b.id] || {}; const open = bookUnlocked(b);
       return open ? `<button class="book" data-act="start" data-arg="book:${b.id}"><div class="book-cover" style="background:${b.color}"><div class="cover-ic">${b.cover}</div>${r.grownup ? '<div class="crown">👑</div>' : ''}</div><div class="book-title">${esc(b.title)}</div><div class="stars">${[1, 2, 3].map(k => `<span class="${(r.reads || 0) >= k ? 'on' : ''}">★</span>`).join('')}</div></button>`
-        : `<div class="book locked"><div class="book-cover"><div class="cover-ic">${ICON.lock(30)}</div></div><div class="book-title">Keep growing!</div></div>`;
+        : `<div class="book locked"><div class="book-cover"><div class="cover-ic">${ICON.lock(30)}</div></div><div class="book-title">Keep reading!</div></div>`;
     }).join('')}</div>
     ${nav('books')}
   </section>`;
@@ -496,7 +631,7 @@ const SLOT_VIEW = { head: '36 -6 76 76', face: '14 46 66 66', neck: '44 86 72 72
 function curOutfit() { const w = S.tryOn && ITEM[S.tryOn]; return w ? Object.assign({}, state.outfit, { [w.slot]: w.id }) : state.outfit; }
 function itemTile(w) {
   const own = state.owned.includes(w.id), worn = state.outfit[w.slot] === w.id, ms = w.earn && MILESTONES[w.earn];
-  const status = worn ? 'Wearing ✓' : own ? 'Tap to wear' : ms ? `🔒 ${Math.min(milestoneProgress(w.earn), ms.goal)}/${ms.goal}` : `${ICON.star(13)} ${w.cost}`;
+  const status = worn ? 'Wearing ✓' : own ? 'Tap to wear' : '🎁';
   const isNew = (S.newSeen || []).includes(w.id);
   return `<button class="witem ${worn ? 'worn' : ''} ${own ? '' : 'locked'} ${S.tryOn === w.id ? 'picked' : ''}" data-act="ward" data-arg="${w.id}">${miniSp({ [w.slot]: w.id }, SLOT_VIEW[w.slot])}<b>${esc(w.name)}</b><span class="tiny">${status}</span>${isNew ? '<i class="new-tag">NEW</i>' : ''}</button>`;
 }
@@ -515,7 +650,7 @@ function vWardrobe() {
   else grid = `<div class="ward">${WARDROBE.filter(w => w.slot === tab).map(itemTile).join('')}</div>`;
   let sheet = '';
   const w = S.tryOn && ITEM[S.tryOn];
-  if (w && !state.owned.includes(w.id)) {
+  if (false) { // v0.5: no shop; things arrive as presents after an adventure
     const ms = w.earn && MILESTONES[w.earn]; const short = (w.cost || 0) - gems();
     sheet = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${miniSp({ [w.slot]: w.id }, SLOT_VIEW[w.slot])}<div class="grow">${ms ? `Earn the ${esc(w.name)}!<div class="small" style="font-weight:600">${esc(ms.label)} (${Math.min(milestoneProgress(w.earn), ms.goal)} of ${ms.goal})</div>` : short > 0 ? `${esc(w.name)}<div class="small" style="font-weight:600">You need ${short} more gems. Keep reading!</div>` : `Get the ${esc(w.name)} for ${w.cost} gems?`}</div></div>
       ${!ms && short <= 0 ? `<div class="row"><button class="btn ghost" data-act="wardCancel">Not now</button><button class="btn ok" data-act="buy" data-arg="${w.id}">Yes! ${ICON.star(18)} ${w.cost}</button></div>` : `<button class="btn soft" data-act="wardCancel">OK</button>`}</div>`;
@@ -524,7 +659,7 @@ function vWardrobe() {
     ${topBar()}
     <div class="hero-sp">${sparkle(210, S.tryOn ? 'wow' : 'happy', 'float-sp', outfit)}
       ${ws ? `<div class="sp-title">${ws.icon} ${ws.title}</div>` : ''}
-      <div class="say-bubble big">${esc(S.wbubble || 'Dress me up! Earn gems by reading.')}</div></div>
+      <div class="say-bubble big">${esc(S.wbubble || 'Dress me up! Read with me to get presents.')}</div></div>
     <div class="looks-row"><div class="cap">My looks</div><div class="looks">${looks}</div><button class="btn ghost plain" data-act="undress">Plain</button></div>
     <div class="tiny muted center-t" style="margin-top:-10px">Tap ＋ to save this look · hold a look to replace it</div>
     <div class="tabs">${tabs}</div>
@@ -551,7 +686,7 @@ function vWelcome() {
   return `<section class="screen center" style="justify-content:center;gap:16px">
     ${sparkle(220, 'happy', 'float-sp')}
     <h1 class="h1" style="font-size:32px">Hi! I'm Sparkle.</h1>
-    <p class="muted" style="font-size:18px;margin:0">Let's grow a word garden together!</p>
+    <p class="muted" style="font-size:18px;margin:0">Let's read together! Reading is my favourite thing.</p>
     <div class="card" style="width:100%;text-align:left">
       <div class="cap">For a grown-up</div>
       <div style="font-size:16px;line-height:1.4">Start with a 3-minute check: ${esc(state.name)} reads 10 words out loud and you tap whether she got each one.</div>
@@ -584,8 +719,8 @@ function vPlacement() {
   const idx = placementStep(P.res);
   return `<section class="screen">
     <h1 class="h1">${esc(state.name)} read ${P.res.filter(Boolean).length} of 10!</h1>
-    <div class="card dark"><div class="cap">Her starting point</div><div style="font-size:19px;font-weight:600">${esc(STEPS[idx].title)} (${UNITS[STEPS[idx].unit]})</div><div class="small muted">Earlier sounds are planted as buds in her garden, ready to bloom.</div></div>
-    <button class="btn" data-act="placeDone">Start ${esc(state.name)}'s garden</button></section>`;
+    <div class="card dark"><div class="cap">Her starting point</div><div style="font-size:19px;font-weight:600">${esc(STEPS[idx].title)} (${UNITS[STEPS[idx].unit]})</div><div class="small muted">Earlier sounds count as learned and come back now and then for review.</div></div>
+    <button class="btn" data-act="placeDone">Start reading with Sparkle</button></section>`;
 }
 function placementStep(res) {
   const ok = s => res[PLACEMENT.findIndex(p => p.s === s)];
@@ -593,12 +728,12 @@ function placementStep(res) {
 }
 function vMigrate() {
   const c = stageCounts(); const n = Object.keys(state.words).length;
-  if (S.phase === 'working') return `<section class="screen center" style="justify-content:center;gap:18px">${sparkle(200, 'wow', 'float-sp')}<h1 class="h1">Sparkle is moving your garden to the cloud…</h1><div class="spinner"></div><p class="muted">This keeps ${esc(state.name)}'s progress safe forever.</p></section>`;
+  if (S.phase === 'working') return `<section class="screen center" style="justify-content:center;gap:18px">${sparkle(200, 'wow', 'float-sp')}<h1 class="h1">Sparkle is moving your progress to the cloud…</h1><div class="spinner"></div><p class="muted">This keeps ${esc(state.name)}'s progress safe forever.</p></section>`;
   return `<section class="screen center" style="justify-content:center;gap:16px">
     ${sparkle(190, 'cheer', 'hop-sp')}
     <h1 class="h1">${S.phase === 'ok' ? 'All safe in the cloud! ☁️' : 'Saved on this phone 💾'}</h1>
     <div class="card" style="width:100%">
-      <div style="font-size:17px">${esc(state.name)}'s garden has <b>${n} words</b> — <b>${c[3]} already blooming</b> 🌸</div>
+      <div style="font-size:17px">${esc(state.name)} has <b>${n} words</b> — <b>${c[3]} she knows well</b> ⭐</div>
       <div class="small muted">${S.phase === 'ok' ? 'Gems, streak and progress came along too. Your family code is in the Grown-ups area.' : "We couldn't reach the cloud just now. Everything is kept on this phone and will upload by itself as soon as it can."}</div>
     </div>
     <button class="btn" data-act="nav" data-arg="home">Let's go!</button>
@@ -606,6 +741,37 @@ function vMigrate() {
 }
 
 /* ---------- grown-ups ---------- */
+/* Evidence she is learning, from checked answers only (no self-report anywhere). */
+function learningStats() {
+  const t = today(); const log = state.log || [];
+  const since = n => addDays(t, -n);
+  const pct = a => a.length ? Math.round(a.filter(x => x.ok && !x.help).length / a.length * 100) : null;
+  const reads = log.filter(x => READS.includes(x.t) && !x.retry && !x.cold);
+  const wk = reads.filter(x => x.d >= since(6)), prev = reads.filter(x => x.d >= since(13) && x.d < since(6));
+  const cold = log.filter(x => x.cold && x.d >= since(29));
+  const sent = log.filter(x => x.t === 'sentence' && !x.retry && x.d >= since(13));
+  const fast = wk.filter(x => x.ok && !x.help).map(x => x.ms).sort((a, b) => a - b);
+  const wrongs = log.filter(x => !x.ok && x.d >= since(6));
+  const c = stageCounts();
+  return { week: pct(wk), weekN: wk.length, prev: pct(prev), cold: pct(cold), coldN: cold.length, sent: pct(sent), sentN: sent.length,
+    secs: fast.length ? Math.round(fast[Math.floor(fast.length / 2)] / 100) / 10 : null,
+    guess: wrongs.length >= 4 ? Math.round(wrongs.filter(x => x.ms < 1500).length / wrongs.length * 100) : null, known: c[3], learning: c[0] + c[1] + c[2] };
+}
+function vLearning() {
+  const L = learningStats();
+  const tile = (v, label, sub) => `<div class="card" style="padding:12px;gap:2px;border-radius:18px"><div style="font-size:26px;font-weight:700">${v === null ? '–' : v}</div><div class="tiny muted">${label}</div>${sub ? `<div class="tiny" style="color:var(--pinkDark)">${sub}</div>` : ''}</div>`;
+  const trend = L.week !== null && L.prev !== null ? `${L.week >= L.prev ? '▲' : '▼'} ${Math.abs(L.week - L.prev)} vs last week` : '';
+  return `<div class="card"><div class="h2" style="font-size:17px">Is she learning?</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      ${tile(L.week === null ? null : L.week + '%', `words read right first try, no help (7 days, ${L.weekN} checks)`, trend)}
+      ${tile(L.known, 'words she knows', `${L.learning} still learning`)}
+      ${tile(L.cold === null ? null : L.cold + '%', `brand-new words read right (30 days, ${L.coldN})`)}
+      ${tile(L.sent === null ? null : L.sent + '%', `sentences understood, no help (14 days, ${L.sentN})`)}
+      ${tile(L.secs === null ? null : L.secs + 's', 'typical time to answer a word (includes Sparkle asking)')}
+      ${tile(L.guess === null ? null : L.guess + '%', 'wrong taps that were quick guesses', L.guess >= 50 ? 'She may be guessing: sit with her once' : '')}
+    </div>
+    <div class="tiny muted">All of this comes from answers the app checks itself. A word counts as known after she reads it right, first try and without help, on 3 different days. A miss drops it back a step. Brand-new words are ones she never practised, made of sounds she has learned: reading those shows she is decoding, not memorising.</div></div>`;
+}
 function vParent() {
   const t = today(); const st = streak(); const c = stageCounts();
   const strip = [...Array(14)].map((_, k) => { const d = addDays(t, -13 + k); const x = day(d); return `<i class="${x.met ? (x.sessions > state.settings.dailyMin ? 'extra' : 'met') : state.shielded.includes(d) ? 'shield' : ''}" title="${d}"></i>`; }).join('');
@@ -614,24 +780,22 @@ function vParent() {
   const recent = state.history.filter(h => h.kind !== 'lesson').slice(-8).reverse();
   const cs = { ok: '✅ Saved to the cloud', saving: '⏳ Saving…', offline: '⚠️ Offline — saved on this phone, will upload automatically', idle: '…' }[cloud.status] || cloud.status;
   return `<section class="screen" style="max-width:520px">
-    <div class="row"><button class="icon-btn" data-act="nav" data-arg="home" aria-label="Back">${ICON.back}</button><div class="grow"><div class="cap">For grown-ups</div><h1 class="h1">${esc(state.name)}'s garden</h1></div></div>
+    <div class="row"><button class="icon-btn" data-act="nav" data-arg="home" aria-label="Back">${ICON.back}</button><div class="grow"><div class="cap">For grown-ups</div><h1 class="h1">${esc(state.name)}'s reading</h1></div></div>
+    ${vLearning()}
+    ${vNumParent()}
+    ${vMathParent()}
     <div class="card"><div class="h2" style="font-size:17px">Cloud save</div>
       <div class="small">${cs}${cloud.lastOk ? ` · ${new Date(cloud.lastOk).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''}</div>
-      <div class="tiny muted">Family code (use it to open ${esc(state.name)}'s garden on another phone or iPad):</div>
+      <div class="tiny muted">Family code (use it to open ${esc(state.name)}'s progress on another phone or iPad):</div>
       <div class="code-box">${esc(getCode() || '—')}</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn soft" style="font-size:15px;min-height:50px" data-act="copyLink">Copy family link</button><button class="btn soft" style="font-size:15px;min-height:50px" data-act="pushNow">Save now</button></div>
       <div class="row" style="flex-wrap:wrap"><input class="code-in" id="joinCode" placeholder="Use a different family code" autocapitalize="off" autocomplete="off" spellcheck="false"><button class="btn ghost" style="width:auto" data-act="join">Connect</button></div>
       <div class="tiny muted">The cloud keeps a snapshot of every day, so any day can be restored.</div>
       ${S.flash ? `<div class="small" style="color:var(--okInk)">${esc(S.flash)}</div>` : ''}</div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px">
-      <div class="card" style="padding:12px;gap:2px;border-radius:18px"><div style="font-size:26px;font-weight:700">${st}</div><div class="tiny muted">day streak</div></div>
-      <div class="card" style="padding:12px;gap:2px;border-radius:18px"><div style="font-size:26px;font-weight:700">${c[3]}</div><div class="tiny muted">words mastered (flowers)</div></div>
-      <div class="card" style="padding:12px;gap:2px;border-radius:18px"><div style="font-size:26px;font-weight:700">${c[0] + c[1] + c[2]}</div><div class="tiny muted">words growing</div></div>
-    </div>
     <div class="card"><div class="h2" style="font-size:17px">Last 14 days</div><div class="strip">${strip}</div>
-      <div class="tiny muted">A word grows one stage on each day she reads it right: seed → sprout → bud → flower. New sounds unlock when 80% of the current sound's words are buds or flowers.</div></div>
+      <div class="tiny muted">${st} day streak. A new sound unlocks when she reads 80% of the current sound's words right on at least 2 different days.</div></div>
     <div class="card"><div class="h2" style="font-size:17px">Sounds</div>${stepRows}</div>
-    ${missed.length ? `<div class="card"><div class="h2" style="font-size:17px">Words she's still practising</div><div class="reading" style="font-size:18px;font-weight:700;display:flex;flex-wrap:wrap;gap:6px 12px">${missed.map(([w, x]) => `<span>${esc(w)} <span class="tiny muted">×${x.miss}</span></span>`).join('')}</div><div class="tiny muted">These come up first when she waters her garden.</div></div>` : ''}
+    ${missed.length ? `<div class="card"><div class="h2" style="font-size:17px">Words she's still practising</div><div class="reading" style="font-size:18px;font-weight:700;display:flex;flex-wrap:wrap;gap:6px 12px">${missed.map(([w, x]) => `<span>${esc(w)} <span class="tiny muted">×${x.miss}</span></span>`).join('')}</div><div class="tiny muted">These come up first in her daily read.</div></div>` : ''}
     <div class="card"><div class="h2" style="font-size:17px">Books</div>${BOOKS.filter(bookUnlocked).map(b => { const r = state.books[b.id] || {}; return `<div class="list-row small"><span class="grow">${b.cover} ${esc(b.title)}</span><b>${r.reads || 0}× ${r.grownup ? '👑' : ''}</b></div>`; }).join('') || '<div class="small muted">First book unlocks after the short i sound.</div>'}</div>
     <div class="card"><div class="h2" style="font-size:17px">Recent adventures</div>${recent.map(h => `<div class="list-row small"><span class="grow">${fmtDate(h.at.slice(0, 10))} · ${{ daily: 'Adventure', more: 'Bonus', game: 'Balloons' }[h.kind] || 'Book'}${h.grew && h.grew.length ? ` · ${h.grew.length} grew` : ''}${h.mood ? ' ' + { love: '😍', ok: '🙂', meh: '😐' }[h.mood] : ''}</span><b>${h.total ? Math.round(h.right / h.total * 100) + '%' : ''}</b></div>`).join('') || '<div class="small muted">No adventures yet.</div>'}</div>
     <div class="card"><div class="h2" style="font-size:17px">Settings</div>
@@ -642,13 +806,15 @@ function vParent() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn soft" style="font-size:15px;min-height:50px" data-act="copySummary">Copy summary</button><button class="btn soft" style="font-size:15px;min-height:50px" data-act="export">Export data</button></div></div>
     <div class="card"><div class="h2" style="font-size:17px">Setup</div>
       <div class="list-row"><div class="grow small">Re-run the placement check</div><button class="btn ghost" style="width:auto" data-act="placement">Run</button></div>
-      <div class="tiny muted">Mel Reads v0.4 · Sparkle's Word Garden</div></div>
+      <div class="tiny muted">Mel Reads v0.9 · Read and count with Sparkle</div></div>
   </section>`;
 }
 function summaryText() {
   const c = stageCounts();
-  return [`Mel Reads — ${today()}`, `Streak ${streak()} · gems ${gems()} · sound step: ${(STEPS[state.stepIdx] || { title: 'all done' }).title}`, `Garden: ${c[3]} flowers, ${c[2]} buds, ${c[1]} sprouts, ${c[0]} seeds`,
+  return [`Mel Reads — ${today()}`, `Streak ${streak()} · sound step: ${(STEPS[state.stepIdx] || { title: 'all done' }).title}`, `Words: ${c[3]} known, ${c[0] + c[1] + c[2]} learning`, (L => `Checked: ${L.week ?? '-'}% words first try (7d) · ${L.cold ?? '-'}% brand-new words · ${L.sent ?? '-'}% sentences · ${L.secs ?? '-'}s per word`)(learningStats()),
     `Practising: ${Object.entries(state.words).filter(([, x]) => x.miss > 0).sort((a, b) => b[1].miss - a[1].miss).slice(0, 10).map(([w, x]) => `${w}(${x.miss})`).join(', ')}`,
+    numSummaryLine(),
+    mathSummaryLine(),
     `Books: ${Object.entries(state.books).map(([id, r]) => `${id} ×${r.reads}${r.grownup ? ' 👑' : ''}`).join(', ')}`, `Notes: ${state.notes || '-'}`].join('\n');
 }
 
@@ -665,16 +831,24 @@ const A = {
   start: k => startSession(k || 'daily'),
   next: () => nextItem(),
   quit: () => go('home'),
-  sparkle: (_, el) => { pokeSparkle(el); haptic('light'); burst(el.getBoundingClientRect(), 8); say(spLine && spLine.length ? spLine : [LINES.hi[0]]); },
-  sayword: (w, el) => { if (!w) return; say([w]); if (el) { el.classList.remove('bounce'); void el.offsetWidth; el.classList.add('bounce'); } },
+  // sparkle, sayword, sticker, berry, treatTap and toy live in delight.js (three stages per tap reaction).
   introDone: () => { const it = cur(); if (!state.introsSeen.includes(it.step.id)) state.introsSeen.push(it.step.id); save(); nextItem(); },
-  meetSaid: (_, el) => {
-    const it = cur(); it.read = true; it.done = true;
+  meetDone: () => {
+    const it = cur(); it.done = true;
     if (!state.words[it.w]) { state.words[it.w] = { s: 0, last: null, ok: 0, miss: 0, at: new Date().toISOString() }; S.planted.push(it.w); }
-    chime(); haptic('success'); save(); render(); burst(el.getBoundingClientRect(), 12); say([praise()]);
+    save(); nextItem();
+  },
+  // Tapping a word in a sentence reads it out: that's help, so the answer won't count as unaided.
+  helpword: (w, el) => { const it = cur(); if (it && !it.done) it.helped = true; A.sayword(w, el); },
+  pageWord: (w, el) => {
+    const it = cur(); if (it.done) return;
+    if (w.toLowerCase() === String(it.target).toLowerCase()) { it.w = undefined; correct(it, el.getBoundingClientRect()); }
+    else { wrong(it, w); }
   },
   ans: (v, el) => {
-    const it = cur(); if (it.done) return; const r = el.getBoundingClientRect();
+    const it = cur(); if (it.done) return;
+    if (it.type === 'math') return mathAnswer(v, el);
+    if (it.type === 'num') return numAnswer(v, el); const r = el.getBoundingClientRect();
     if (v === it.answer) correct(it, r); else wrong(it, v);
   },
   tile: k => {
@@ -685,7 +859,16 @@ const A = {
       render();
     } else { S.shakeK = Number(k); wrong(it); S.shakeK = null; }
   },
-  readPage: (_, el) => { const it = cur(); it.read = true; it.done = true; haptic('success'); chime(); render(); burst(el.getBoundingClientRect(), 14); sparkleSays([it.text, LINES.readIt], 'Wow, beautiful reading!'); },
+  mathHelp: () => mathHelp(),
+  mathIntroDone: () => { const it = cur(); const m = mathState(); const id = MATH_LEVELS[it.lvl].id; if (!m.intros.includes(id)) m.intros.push(id); save(); nextItem(); },
+  toPresent: () => go('present', { choices: shuffle(WARDROBE.filter(w => !state.owned.includes(w.id))).slice(0, 2), kind: S.kind }),
+  toBed: () => go('bedtime'),
+  pickPresent: id => {
+    const w = ITEM[id]; if (!w) return;
+    if (!state.owned.includes(id)) state.owned.push(id);
+    state.outfit[w.slot] = id; checkSets(); save(); fanfare(); confetti(80); haptic('big');
+    go('bedtime', { gift: w });
+  },
   mood: k => { haptic('light'); S.mood = k; const h = state.history[state.history.length - 1]; if (h) h.mood = k; save(); render(); },
   afterSummary: () => { if (S.justMet) go('goal', { newShield: S.newShield }); else go('home'); },
   grownupRead: id => go('grownup', { book: id, page: 0 }),
@@ -700,7 +883,7 @@ const A = {
     }
     S.tryOn = id;
     const ms = w.earn && MILESTONES[w.earn];
-    S.wbubble = ms ? `Ooh! ${ms.label} to earn it!` : gems() >= w.cost ? 'Ooh, do you like it?' : "Let's save up more gems for that one!";
+    S.wbubble = "Ooh! Maybe I'll get this as a present! 🎁";
     render(); say([S.wbubble]);
   },
   wardCancel: () => { S.tryOn = null; S.wbubble = null; render(); },
@@ -732,7 +915,7 @@ const A = {
     const el = document.getElementById('joinCode'); const v = el ? el.value : '';
     S.flash = 'Connecting…'; render();
     const r = await joinCode(v);
-    S.flash = { ok: 'Connected! Garden loaded.', bad: 'That code looks too short.', notfound: "We couldn't find that code.", offline: "Can't reach the cloud right now." }[r];
+    S.flash = { ok: 'Connected! Progress loaded.', bad: 'That code looks too short.', notfound: "We couldn't find that code.", offline: "Can't reach the cloud right now." }[r];
     if (r === 'ok') { state.placed = state.placed || true; saveLocal(); }
     render();
   },

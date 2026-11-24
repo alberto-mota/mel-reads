@@ -7,9 +7,14 @@ const SB_URL = 'https://kgzgqbpioyrjfkwqycok.supabase.co';
 const SB_KEY = 'sb_publishable_e6gm94yN2o07O-qXp7PYGw_9BvrHzuy';
 const CODE_KEY = 'melreads.code', REV_KEY = 'melreads.rev';
 const cloud = { status: 'idle', lastOk: null, timer: null, busy: false, again: false, onChange: null };
+/* Test app: preview and beta addresses keep their own saves. Their family codes start with "test-",
+   so they can never write to Mel's save. Entering Mel's code there copies her progress in, read-only. */
+const IS_TEST = /(^|[.-])(beta|git)([.-]|$)|^localhost$|^127\.0\.0\.1$|^mel-reads-[a-z0-9]{9}-/.test(location.hostname);
+const isTestCode = c => String(c || '').startsWith('test-');
+const DAY_OFFSET = IS_TEST ? Number(localStorage.getItem('melreads.test.dayOffset') || 0) : 0;
 const CODE_WORDS = ['pink', 'star', 'pony', 'cloud', 'moon', 'heart', 'rose', 'candy', 'berry', 'gem', 'fairy', 'dream', 'sky', 'sun', 'bloom', 'glitter', 'shell', 'pearl', 'honey', 'kitty', 'bunny', 'ruby', 'lily', 'daisy', 'magic', 'wish', 'sparkle', 'rainbow', 'castle', 'crown', 'petal', 'bubble'];
 
-function newCode() { const r = new Uint32Array(4); crypto.getRandomValues(r); return [0, 1, 2].map(i => CODE_WORDS[r[i] % 32]).join('-') + '-' + (1000 + (r[3] % 9000)); }
+function newCode() { const r = new Uint32Array(4); crypto.getRandomValues(r); return (IS_TEST ? 'test-' : '') + [0, 1, 2].map(i => CODE_WORDS[r[i] % 32]).join('-') + '-' + (1000 + (r[3] % 9000)); }
 function cleanCode(c) { return String(c || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
 function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -50,9 +55,12 @@ function mergeStates(a, b) {
   new Set([...Object.keys(a.words || {}), ...Object.keys(b.words || {})]).forEach(w => {
     const x = (a.words || {})[w], y = (b.words || {})[w];
     if (!x || !y) { m.words[w] = JSON.parse(JSON.stringify(x || y)); return; }
-    const hi = x.s >= y.s ? x : y;
-    m.words[w] = { s: Math.max(x.s, y.s), last: (x.last || '') > (y.last || '') ? x.last : y.last, ok: Math.max(x.ok || 0, y.ok || 0), miss: Math.max(x.miss || 0, y.miss || 0), at: hi.at || x.at || y.at };
+    // The copy with the latest activity wins the stage, so a miss that dropped a word back isn't undone by an older copy.
+    const act = z => [z.last || '', z.slip || ''].sort().pop();
+    const hi = act(x) === act(y) ? (x.s >= y.s ? x : y) : act(x) > act(y) ? x : y;
+    m.words[w] = { s: hi.s, last: (x.last || '') > (y.last || '') ? x.last : y.last, slip: (x.slip || '') > (y.slip || '') ? x.slip : y.slip, ok: Math.max(x.ok || 0, y.ok || 0), miss: Math.max(x.miss || 0, y.miss || 0), at: hi.at || x.at || y.at };
   });
+  const seenLog = new Set(); m.log = [...(a.log || []), ...(b.log || [])].filter(e => { const k = JSON.stringify(e); if (seenLog.has(k)) return false; seenLog.add(k); return true; }).sort((p, q) => (p.d < q.d ? -1 : p.d > q.d ? 1 : 0)).slice(-2000);
   m.days = {};
   new Set([...Object.keys(a.days || {}), ...Object.keys(b.days || {})]).forEach(d => {
     const x = (a.days || {})[d] || {}, y = (b.days || {})[d] || {};
@@ -64,6 +72,23 @@ function mergeStates(a, b) {
     m.books[id] = { reads: Math.max(x.reads || 0, y.reads || 0), grownup: !!(x.grownup || y.grownup), first: [x.first, y.first].filter(Boolean).sort()[0] || null };
   });
   const seen = new Set(); m.history = [...(a.history || []), ...(b.history || [])].filter(h => { const k = h.at + (h.kind || ''); if (seen.has(k)) return false; seen.add(k); return true; }).sort((p, q) => (p.at < q.at ? -1 : 1)).slice(-400);
+  if (a.math || b.math) {
+    // Math facts merge like words: the copy with the latest activity wins a fact's box.
+    const ma = a.math || {}, mb = b.math || {}; const fa = ma.facts || {}, fb = mb.facts || {};
+    const mm = { lvl: Math.max(ma.lvl || 0, mb.lvl || 0), intros: [...new Set([...(ma.intros || []), ...(mb.intros || [])])], facts: {}, days: {} };
+    new Set([...Object.keys(fa), ...Object.keys(fb)]).forEach(f => {
+      const x = fa[f], y = fb[f];
+      if (!x || !y) { mm.facts[f] = JSON.parse(JSON.stringify(x || y)); return; }
+      const act = z => [z.last || '', z.slip || ''].sort().pop();
+      const hi = act(x) === act(y) ? (x.b >= y.b ? x : y) : act(x) > act(y) ? x : y;
+      mm.facts[f] = Object.assign(JSON.parse(JSON.stringify(hi)), { ok: Math.max(x.ok || 0, y.ok || 0), miss: Math.max(x.miss || 0, y.miss || 0), days: Math.max(x.days || 0, y.days || 0) });
+    });
+    new Set([...Object.keys(ma.days || {}), ...Object.keys(mb.days || {})]).forEach(d => {
+      const x = (ma.days || {})[d] || {}, y = (mb.days || {})[d] || {};
+      mm.days[d] = (x.total || 0) >= (y.total || 0) ? Object.assign({}, x) : Object.assign({}, y);
+    });
+    m.math = mm;
+  }
   m.legacyV1 = a.legacyV1 || b.legacyV1 || null;
   m.createdAt = [a.createdAt, b.createdAt].filter(Boolean).sort()[0] || m.createdAt;
   return m;
@@ -72,6 +97,7 @@ function mergeStates(a, b) {
 async function pushNow() {
   if (cloud.busy) { cloud.again = true; return cloud.status; }
   const code = getCode(); if (!code) return 'idle';
+  if (IS_TEST && !isTestCode(code)) return 'idle';
   cloud.busy = true; setCloudStatus('saving');
   try {
     for (let attempt = 0; attempt < 4; attempt++) {
@@ -97,6 +123,7 @@ async function cloudStart() {
   const h = (location.hash || '').match(/code=([a-z0-9-]+)/i);
   if (h) { const c = cleanCode(h[1]); if (c !== code) { code = c; setCode(code); setRev(0); } history.replaceState(null, '', location.pathname); }
   if (!code) { code = newCode(); setCode(code); setRev(0); }
+  if (IS_TEST && !isTestCode(code)) { const src = code; code = newCode(); setCode(code); setRev(0); await copyFrom(src).catch(() => {}); }
   try {
     const remote = await cloudGet(code);
     if (remote && remote.data) {
@@ -111,12 +138,21 @@ async function cloudStart() {
 /* Grown-up typed a family code on a new device: join that save (merging anything played here). */
 async function joinCode(raw) {
   const code = cleanCode(raw); if (code.length < 12) return 'bad';
+  if (IS_TEST && !isTestCode(code)) return copyFrom(code).then(r => r === 'ok' ? pushNow().then(() => 'ok') : r, () => 'offline');
   const remote = await cloudGet(code).catch(() => undefined);
   if (remote === undefined) return 'offline';
   if (!remote) return 'notfound';
   setCode(code); setRev(remote.rev);
   state = mergeStates(state, remote.data); saveLocal();
   await pushNow();
+  return 'ok';
+}
+/* Test app only: pull someone's save in and merge it into this test save. Their save is only read. */
+async function copyFrom(code) {
+  const remote = await cloudGet(code);
+  if (!remote) return 'notfound';
+  state = mergeStates(state, remote.data); saveLocal();
+  if (typeof render === 'function') render();
   return 'ok';
 }
 function familyLink() { return location.origin + location.pathname + '#code=' + (getCode() || ''); }
