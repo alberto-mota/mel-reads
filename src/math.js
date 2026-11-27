@@ -30,6 +30,7 @@ const MATH_LINES = {
   section: "Let's count! Help me with my numbers.",
   ask: 'What is', plus: 'plus',
   count: "Let's count the dots together.",
+  cue: 'Start with the bigger number. Then count on!',
   fast: ['Lightning fast!', 'Super speedy!', 'Zoom!'],
   combo: { 3: 'Three in a row!', 5: 'Five in a row! Wow!', 8: 'Eight in a row! Unicorn magic!', 12: 'Twelve in a row! Amazing!' },
   newKind: 'Ooh, a new kind of number fact!',
@@ -120,10 +121,11 @@ function mathRight(it, rect) {
   } else S.combo = 0;
   S.total++;
   it.msg = 'ok'; it.fast = fast;
-  const lines = [fast ? MATH_LINES.fast[rnd(MATH_LINES.fast.length)] : praise(), `${it.a} ${MATH_LINES.plus} ${it.b} is ${it.answer}!`];
+  // Answer time is still recorded (Grown-ups screen), but Sparkle praises getting it, never speed.
+  const lines = [praise(), `${it.a} ${MATH_LINES.plus} ${it.b} is ${it.answer}!`];
   if (counts && MATH_LINES.combo[S.combo]) lines.push(MATH_LINES.combo[S.combo]);
   S.bubble = lines[0];
-  save(); render(); if (rect) burst(rect, fast ? 22 : 14);
+  save(); render(); if (rect) burst(rect, 14);
   sparkleSays(lines);
 }
 function mathMiss(it, n) {
@@ -135,18 +137,28 @@ function mathMiss(it, n) {
     if (!it.retry) {
       x.miss = (x.miss || 0) + 1;
       if (x.slip !== t) { x.slip = t; x.b = Math.max(0, x.b - 2); x.due = t; }
-      requeueMath(it);
+      if (!it.sib) requeueMath(it);
     }
     S.combo = 0;
   }
-  it.first = false; it.tries++; it.dots = true; if (!it.wrong.includes(n)) it.wrong.push(n);
-  boop(); haptic('error'); it.msg = 'bad'; S.bubble = MATH_LINES.count;
+  it.first = false; it.tries++; if (!it.wrong.includes(n)) it.wrong.push(n);
+  boop(); haptic('error'); it.msg = 'bad';
+  // Help comes in steps: a hint, then the dots, then Sparkle shows the answer (she still types it).
+  let lines;
+  if (it.tries === 1 && !it.dots) { lines = [MATH_LINES.cue]; S.bubble = MATH_LINES.cue; }
+  else if (it.tries <= 2 && !it.dots) { it.dots = true; lines = [MATH_LINES.count]; S.bubble = MATH_LINES.count; }
+  else { it.dots = true; it.reveal = true; lines = [`${it.a} ${MATH_LINES.plus} ${it.b} is ${it.answer}.`]; S.bubble = `${it.a} + ${it.b} = ${it.answer}`; }
   render();
-  sparkleSays([MATH_LINES.count, `${it.a} ${MATH_LINES.plus} ${it.b} is ${it.answer}.`]);
+  sparkleSays(lines);
 }
-/* A missed fact comes back near the end of today's practice, without dots. */
+/* After a miss, a DIFFERENT fact of the same kind comes back near the end of today's practice, without dots,
+   so she has to use the idea again rather than remember this one answer. It counts like any other question.
+   (The missed fact itself has dropped two boxes and comes back on a later day.) */
 function requeueMath(it) {
-  const copy = mathItem(it.f, { retry: true, dots: false });
+  const m = mathState(); const ahead = new Set(S.items.slice(S.i + 1).map(x => x.f).filter(Boolean));
+  const sibs = shuffle(levelFacts(FACT[it.f].lvl).filter(f => f !== it.f && !ahead.has(f) && (mathFact(f) || { b: 0 }).last !== today()));
+  const f = sibs[0] || it.f;
+  const copy = f === it.f ? mathItem(f, { retry: true, dots: false }) : mathItem(f, { sib: true, dots: false, cold: !m.facts[f] });
   S.items.splice(Math.max(S.items.length, S.i + 2), 0, copy);
 }
 function mathHelp() { const it = cur(); if (!it || it.done || it.dots) return; it.dots = true; it.helped = true; haptic('light'); render(); sparkleSays([MATH_LINES.count]); }
@@ -166,17 +178,17 @@ const mathDoneToday = () => !!(mathState().days[today()] || {}).n;
 /* ---------- drawing ---------- */
 function dotGroup(n, cls) { return `<span class="dgrp ${cls}" style="grid-template-columns:repeat(${Math.max(1, Math.min(5, n))},22px)">${[...Array(n)].map(() => '<i></i>').join('')}${n ? '' : '<em>0</em>'}</span>`; }
 function mathEq(it, showAns) {
-  return `<div class="eq" aria-label="${it.a} plus ${it.b}"><b class="na">${it.a}</b><i>+</i><b class="nb">${it.b}</b><i>=</i><b class="q ${showAns ? 'got' : ''}">${showAns ? it.answer : '?'}</b></div>`;
+  const q = showAns ? it.answer : it.typed ? it.typed : '?';
+  return `<div class="eq" aria-label="${it.a} plus ${it.b}"><b class="na">${it.a}</b><i>+</i><b class="nb">${it.b}</b><i>=</i><b class="q pad-slot ${showAns ? 'got' : it.typed ? 'typed' : ''}">${q}</b></div>`;
 }
 function mathDots(it) { return `<div class="dots ${it.msg === 'bad' ? 'counting' : ''}">${dotGroup(it.a, 'a')}<span class="dplus">+</span>${dotGroup(it.b, 'b')}</div>`; }
 function vMathItem(it, sp) {
-  const optClass = v => it.done && v === it.answer ? 'right' : it.wrong.includes(v) ? 'wrong' : '';
   const combo = (S.combo || 0) >= 3 ? `<div class="combo pop">🔥 ${S.combo} in a row!</div>` : '';
   let foot = '';
-  const body = `${sp}${combo}<div class="card math-card">${mathEq(it, it.done)}${it.dots ? mathDots(it) : ''}</div>
-    <div class="opts four">${it.opts.map(o => `<button class="opt num ${optClass(o)}" data-act="ans" data-arg="${o}">${o}</button>`).join('')}</div>
+  const body = `${sp}${combo}<div class="card math-card">${mathEq(it, it.done)}${it.dots ? mathDots(it) : ''}${padTried(it)}${it.reveal && !it.done ? `<div class="eq small center reveal">${it.a} + ${it.b} = ${it.answer}</div>` : ''}</div>
+    ${it.done ? '' : padView(it)}
     ${!it.dots && !it.done ? `<button class="speak help-dots" data-act="mathHelp" aria-label="Show me the dots">💡 <span class="mini-dots"><i></i><i></i><i></i></span></button>` : ''}`;
-  if (it.msg === 'ok') foot = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${sparkle(64, 'cheer', 'mini')}<div class="grow">${it.fast ? '⚡ ' : ''}${esc(S.bubble || 'Sparkly!')}<div class="eq small">${it.a} + ${it.b} = ${it.answer}</div></div><div class="star-pop">⭐</div></div><button class="btn ok" data-act="next">${S.i === S.items.length - 1 ? 'Finish' : 'Next'}</button></div>`;
+  if (it.msg === 'ok') foot = `<div class="sheet-space"></div><div class="sheet ok"><div class="msg">${sparkle(64, 'cheer', 'mini')}<div class="grow">${esc(S.bubble || 'Sparkly!')}<div class="eq small">${it.a} + ${it.b} = ${it.answer}</div></div><div class="star-pop">⭐</div></div><button class="btn ok" data-act="next">${S.i === S.items.length - 1 ? 'Finish' : 'Next'}</button></div>`;
   return { body, foot };
 }
 function vMathIntro(it, sp) {

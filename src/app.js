@@ -806,7 +806,7 @@ function vParent() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px"><button class="btn soft" style="font-size:15px;min-height:50px" data-act="copySummary">Copy summary</button><button class="btn soft" style="font-size:15px;min-height:50px" data-act="export">Export data</button></div></div>
     <div class="card"><div class="h2" style="font-size:17px">Setup</div>
       <div class="list-row"><div class="grow small">Re-run the placement check</div><button class="btn ghost" style="width:auto" data-act="placement">Run</button></div>
-      <div class="tiny muted">Mel Reads v0.9 · Read and count with Sparkle</div></div>
+      <div class="tiny muted">Mel Reads v0.10 · Read and count with Sparkle</div></div>
   </section>`;
 }
 function summaryText() {
