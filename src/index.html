@@ -170,6 +170,15 @@ button{font-family:inherit;color:inherit;cursor:pointer;-webkit-appearance:none;
 .eq.small.center{justify-content:center;text-align:center}
 .ngrid{display:grid;gap:3px;font-size:11px;text-align:center} .ngrid b{color:var(--muted);font-weight:700;align-self:center;text-align:left}
 .btn[disabled]{opacity:.5}
+/* Number pad (pad.js) */
+.pad{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.pk{font-family:'Fredoka',sans-serif;font-size:36px;font-weight:700;min-height:66px;color:var(--ink)}
+.pk-del{font-size:28px;color:var(--muted)} .pk-ok{background:#E3F9EF;color:var(--okInk);box-shadow:0 7px 0 var(--mint)} .pk-ok.off{opacity:.45}
+.nslot{font-family:'Fredoka',sans-serif;font-weight:700;font-size:56px;line-height:1;min-width:100px;text-align:center;border-radius:20px;background:#F6ECF3;padding:6px 14px;color:#B79AAE}
+.pad-slot.typed{background:#fff;color:var(--ink);box-shadow:inset 0 0 0 3px var(--lav)}
+.nslot.got{background:#E3F9EF;color:var(--okInk)}
+.pad-tried{font-size:20px;font-weight:700;color:var(--warnInk);display:flex;gap:10px;justify-content:center} .pad-tried s{text-decoration-thickness:3px}
+.reveal{color:var(--lavInk)!important}
 .help-dots{margin-top:4px} .mini-dots{display:flex;gap:4px} .mini-dots i{width:10px;height:10px;border-radius:50%;background:var(--lavInk)}
 .combo{align-self:center;background:linear-gradient(180deg,#FFB35C,#F08A24);color:#fff;font-weight:700;font-size:18px;border-radius:999px;padding:6px 16px;box-shadow:0 4px 0 #B9600C;margin:-6px 0}
 .star-pop{font-size:40px;animation:pop .6s cubic-bezier(.3,1.6,.5,1)}
@@ -412,6 +421,7 @@ button.sticker{font:inherit;font-size:24px;padding:0;width:100%;color:inherit;cu
 <script src="math.js"></script>
 <script src="app.js"></script>
 <script src="numbers.js"></script>
+<script src="pad.js"></script>
 <script src="delight.js"></script>
 <script src="testkit.js"></script>
 <script>

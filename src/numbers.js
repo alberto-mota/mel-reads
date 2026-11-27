@@ -42,6 +42,7 @@ const NUM_LINES = {
   tensFirst: 'Look at the tens first!', newKind: 'Ooh! Numbers after ten!',
   praise: ['Yes!', 'Super star!', 'You got it!', 'Number magic!', 'Woohoo!', 'Sparkly!'],
   build: 'Tap a ten or a one to build the number.',
+  seeCue: 'Count the full tens first. Then the ones.', listen: 'Listen again.', sayOut: 'Say the numbers out loud with me.',
 };
 const say10 = n => n % 10 === 0 ? (n === 10 ? '10 is one ten.' : `${n} is ${n / 10} tens.`) : n < 20 ? `${n} is ten and ${n - 10}.` : `${n} is ${Math.floor(n / 10)} tens and ${n % 10}.`;
 const sayAfter = n => `What comes after ${n}?`;
@@ -178,21 +179,40 @@ function numMiss(it, n) {
       logAnswer(Object.assign({}, it, { w: it.k, type: 'num' }), false);
       const x = numTouch(it.k); x.miss = (x.miss || 0) + 1; x.wr = [...(x.wr || []), n].slice(-6);
       if (x.slip !== t) { x.slip = t; x.b = Math.max(0, x.b - 2); x.due = t; }
-      // It comes back near the end of today's practice.
-      S.items.splice(Math.max(S.items.length, S.i + 2), 0, numItem(it.k, { retry: true }));
+      // A different question of the same kind comes back near the end of today's practice.
+      if (!it.sib) numRequeue(it);
     }
     S.combo = 0;
   }
-  it.first = false; it.tries++; it.show = true;
+  it.first = false; it.tries++;
   if (!isNaN(n) && it.wrong && !it.wrong.includes(n)) it.wrong.push(n);
   boop(); haptic('error'); it.msg = 'bad';
+  // Help comes in steps: 1st miss a hint, 2nd the picture or number line, 3rd Sparkle shows the answer.
+  const step = it.skill === 'more' ? 3 : it.show ? Math.max(3, it.tries) : it.tries;
   let lines;
-  if (it.skill === 'more') lines = [NUM_LINES.tensFirst, sayMore(it.a, it.b)];
-  else if (it.skill === 'next' || it.skill === 'before') { const c = it.skill === 'next' ? it.n : it.n - 1; lines = [NUM_LINES.countTogether, String(c - 1), String(c), String(c + 1)]; }
-  else if (it.skill === 'make') lines = [NUM_LINES.notYet, say10(it.n)];
-  else lines = [NUM_LINES.look, say10(it.n)];
-  S.bubble = it.skill === 'more' ? NUM_LINES.tensFirst : it.skill === 'make' ? 'Not quite! Count your tens and ones.' : NUM_LINES.look;
+  if (step === 1) {
+    lines = { see: [NUM_LINES.seeCue], hear: [NUM_LINES.listen, String(it.n)], make: [NUM_LINES.notYet], next: [NUM_LINES.sayOut], before: [NUM_LINES.sayOut] }[it.skill];
+    S.bubble = { see: NUM_LINES.seeCue, hear: NUM_LINES.listen, make: 'Not quite! Count your tens and ones.' }[it.skill] || NUM_LINES.sayOut;
+  } else if (step === 2) {
+    it.show = true;
+    if (it.skill === 'next' || it.skill === 'before') { const c = it.skill === 'next' ? it.n : it.n - 1; lines = [NUM_LINES.countTogether, String(c - 1), String(c)]; }
+    else if (it.skill === 'see') lines = [NUM_LINES.count, ...numCountOn(it.n).slice(0, -1)];
+    else lines = [NUM_LINES.look];
+    S.bubble = NUM_LINES.look;
+  } else {
+    it.show = true; it.reveal = true;
+    lines = it.skill === 'more' ? [NUM_LINES.tensFirst, sayMore(it.a, it.b)] : numExplain(it).length > 1 ? [NUM_LINES.countTogether, ...numExplain(it)] : numExplain(it);
+    S.bubble = it.skill === 'more' ? NUM_LINES.tensFirst : numExplain(it).join(', ');
+  }
   render(); sparkleSays(lines);
+}
+/* The neighbouring number in the same family (or another pair, for "which is more"), so she uses the idea again. */
+function numRequeue(it) {
+  const ahead = new Set(S.items.slice(S.i + 1).map(x => x.k).filter(Boolean));
+  const fam = NUM_LEVELS[NUM_LVL_OF[it.k]].keys.filter(k => k.split(':')[0] === it.skill && k !== it.k && !ahead.has(k) && (numRec(k) || {}).last !== today());
+  const near = it.skill === 'more' ? shuffle(fam) : fam.sort((p, q) => Math.abs(+p.split(':')[1] - it.n) - Math.abs(+q.split(':')[1] - it.n) || Math.random() - 0.5);
+  const k = near[0];
+  S.items.splice(Math.max(S.items.length, S.i + 2), 0, k ? numItem(k, { sib: true, cold: !numRec(k) }) : numItem(it.k, { retry: true }));
 }
 /* 💡: see → Sparkle counts on from ten; hear/next/before → the number line; more → pictures of both. Help makes it practice only. */
 function numHelp() {
@@ -258,23 +278,22 @@ function numLine(from, to, hi, shown) {
   return `<div class="nline">${range(from, to).map(n => `<button class="ncell ${n === hi ? 'hi' : ''} ${shown && shown.includes(n) ? 'mark' : ''}" data-act="numCell" data-arg="${n}">${n}</button>`).join('')}</div>`;
 }
 function vNumItem(it, sp) {
-  const nudge = !it.done && it.tries >= 2;
+  const nudge = !it.done && (it.reveal || it.tries >= 3);
   const optClass = v => it.done && v === it.answer ? 'right' : it.wrong.includes(v) ? 'wrong' : nudge && v === it.answer ? 'nudge' : '';
-  const opts = () => `<div class="opts four">${it.opts.map(o => `<button class="opt num ${optClass(o)}" data-act="ans" data-arg="${o}">${o}</button>`).join('')}</div>`;
   const help = !it.show && !it.done && it.skill !== 'make' ? `<button class="speak help-dots" data-act="numHelp" aria-label="Help me">💡 <span class="mini-dots"><i></i><i></i><i></i></span></button>` : '';
   const dec = n => Math.floor(Math.min(n, 49) / 10) * 10;
   let card = '', below = '';
   switch (it.skill) {
     case 'see':
-      card = `${numPic(it.n, { tap: !it.done, counting: it.show })}${it.done ? `<div class="eq small center">${esc(say10(it.n))}</div>` : ''}`;
-      below = opts(); break;
+      card = `${numPic(it.n, { tap: !it.done, counting: it.show })}${padSlot(it)}${it.done || it.reveal ? `<div class="eq small center">${esc(say10(it.n))}</div>` : ''}`;
+      below = it.done ? '' : padView(it); break;
     case 'hear':
-      card = `<button class="speak big" data-act="numHear" aria-label="Hear it again"><span style="font-size:54px">🔊</span></button>${it.show || it.done ? numPic(it.n) : ''}`;
-      below = opts() + (it.show && !it.done ? numLine(dec(it.n), dec(it.n) + 10) : ''); break;
+      card = `<button class="speak big" data-act="numHear" aria-label="Hear it again"><span style="font-size:54px">🔊</span></button>${it.show || it.done ? numPic(it.n) : ''}${padSlot(it)}${it.reveal && !it.done ? `<div class="eq small center">${esc(say10(it.n))}</div>` : ''}`;
+      below = (it.done ? '' : padView(it)) + (it.show && !it.done ? numLine(dec(it.n), dec(it.n) + 10, it.reveal ? it.n : null) : ''); break;
     case 'next': case 'before': {
       const seq = it.skill === 'next' ? [it.n - 1, it.n, '?'] : ['?', it.n, it.n + 1];
-      card = `<div class="nseq">${seq.map(x => `<b class="${x === '?' ? `q ${it.done ? 'got' : ''}` : ''}">${x === '?' && it.done ? it.answer : x}</b>`).join('<i>,</i>')}</div>`;
-      below = opts() + (it.show || it.done ? numLine(dec(it.answer), dec(it.answer) + 10, it.done || it.tries ? it.answer : null) : ''); break;
+      card = `<div class="nseq">${seq.map(x => `<b class="${x === '?' ? `q pad-slot ${it.done ? 'got' : it.typed ? 'typed' : ''}` : ''}">${x === '?' ? (it.done ? it.answer : it.typed || '?') : x}</b>`).join('<i>,</i>')}</div>${padTried(it)}`;
+      below = (it.done ? '' : padView(it)) + (it.show || it.done ? numLine(dec(it.answer), dec(it.answer) + 10, it.done || it.reveal ? it.answer : null) : ''); break;
     }
     case 'more':
       card = `<div class="nmore">${it.opts.map(o => `<button class="opt num ${optClass(o)}" data-act="ans" data-arg="${o}">${o}</button>`).join('')}</div>${it.show || it.done ? `<div class="nmore-pics">${it.opts.map(o => numPic(o)).join('')}</div>` : ''}`;
@@ -284,7 +303,7 @@ function vNumItem(it, sp) {
       card = `<div class="nmake-target">${it.n}</div><div class="njar">${v ? numPic(v) : `<div class="tiny muted">${esc(NUM_LINES.build)}</div>`}</div><div class="nval">${it.tens} ten${it.tens === 1 ? '' : 's'} · ${it.ones} one${it.ones === 1 ? '' : 's'}</div>`;
       below = it.done ? '' : `<div class="nbuild"><button class="opt nb-ten" data-act="numBuild" data-arg="ten">${tenFrame(10, 'ten mini')}<span>+ ten</span></button><button class="opt nb-one" data-act="numBuild" data-arg="one"><span class="one-dot"></span><span>+ one</span></button><button class="opt nb-undo" data-act="numBuild" data-arg="undo" aria-label="Take one away">↩</button></div>
         <button class="btn ok ${nudge ? 'nudge' : ''}" data-act="numDone" ${v ? '' : 'disabled'}>Done ✓</button>`;
-      if (it.show && !it.done) below = `<div class="nhint">${numPic(it.n)}</div>` + below;
+      if (it.show && !it.done) below = `<div class="nhint">${numPic(it.n)}${it.reveal ? `<div class="eq small center">${esc(say10(it.n))}</div>` : ''}</div>` + below;
       break;
     }
   }
